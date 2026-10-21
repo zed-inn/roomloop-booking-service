@@ -78,3 +78,14 @@ def test_room_response_schema_forbids_extra_fields():
             capacity=8,
             timezone="Europe/Berlin",  # type: ignore[call-arg]
         )
+
+
+def test_room_repository_get_by_id_edge_cases(test_db_server):
+    """verifies get_by_id handles negative, zero, and non-existent IDs gracefully"""
+    _, db = test_db_server
+    repo = RoomRepository(db)
+
+    assert repo.get_by_id(0) is None
+    assert repo.get_by_id(-1) is None
+    assert repo.get_by_id(9999) is None
+    assert repo.get_by_id("not-an-int") is None  # type: ignore[arg-type]

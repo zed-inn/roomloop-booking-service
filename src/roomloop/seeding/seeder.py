@@ -1,8 +1,6 @@
 from roomloop.config.database import DatabaseConnection
-from roomloop.modules.audit.model import AuditLogModel  # noqa: F401
-from roomloop.modules.bookings.model import BookingModel, SeriesModel  # noqa: F401
 from roomloop.modules.rooms.model import RoomModel
-from roomloop.shared.models.base import Base
+from roomloop.shared.models import Base, register_models
 from roomloop.shared.services.logger import app_logger
 
 PROTOTYPE_ROOMS: list[dict[str, object]] = [
@@ -46,6 +44,7 @@ def run_seed() -> None:
     db = DatabaseConnection()
     db.connect()
     try:
+        register_models()
         Base.metadata.create_all(bind=db.engine)
         seeder = DatabaseSeeder(db)
         seeder.seed_all()

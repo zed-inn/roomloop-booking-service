@@ -1,5 +1,5 @@
 import re
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ISO_NAIVE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
@@ -47,7 +47,7 @@ def validate_local_wall_time(dt: datetime, tz_name: str) -> None:
     tz = get_zone_info(tz_name)
 
     localized_0 = dt.replace(tzinfo=tz, fold=0)
-    utc_0 = localized_0.astimezone(ZoneInfo("UTC"))
+    utc_0 = localized_0.astimezone(UTC)
     back_0 = utc_0.astimezone(tz).replace(tzinfo=None)
 
     if back_0 != dt:

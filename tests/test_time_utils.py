@@ -197,3 +197,56 @@ def test_generate_weekly_occurrences_truncates_when_instance_ends_after_cutoff()
     assert len(occurrences) == 1
     assert occurrences[0][0] == start_dt
     assert occurrences[0][1] == end_dt
+
+
+def test_format_naive_iso_type_error():
+    """verifies passing non-datetime to format_naive_iso raises TypeError"""
+    with pytest.raises(TypeError):
+        format_naive_iso("2026-10-21T09:00:00")  # type: ignore[arg-type]
+
+
+def test_get_zone_info_errors():
+    """verifies invalid timezone arguments raise TimeValidationError"""
+    from roomloop.shared.utils.time import get_zone_info
+
+    with pytest.raises(TimeValidationError):
+        get_zone_info("")
+
+    with pytest.raises(TimeValidationError):
+        get_zone_info(None)  # type: ignore[arg-type]
+
+    with pytest.raises(TimeValidationError):
+        get_zone_info("NonExistent/Timezone_123")
+
+
+def test_leap_year_datetime_parsing():
+    """verifies leap year date 2028-02-29 parses while 2026-02-29 raises TimeValidationError"""
+    leap = parse_naive_iso("2028-02-29T12:00:00")
+    assert leap.year == 2028
+    assert leap.month == 2
+    assert leap.day == 29
+
+    with pytest.raises(TimeValidationError):
+        parse_naive_iso("2026-02-29T12:00:00")
+
+
+def test_generate_weekly_occurrences_type_checks():
+    """verifies TypeError when passing invalid argument types to generate_weekly_occurrences"""
+    valid_dt = datetime(2026, 10, 21, 9, 0, 0)
+    valid_date = date(2026, 10, 28)
+
+    with pytest.raises(TypeError):
+        generate_weekly_occurrences(
+            start_dt="not-a-datetime",  # type: ignore[arg-type]
+            end_dt=valid_dt,
+            repeat_until=valid_date,
+            tz_name="Europe/Berlin",
+        )
+
+    with pytest.raises(TypeError):
+        generate_weekly_occurrences(
+            start_dt=valid_dt,
+            end_dt=valid_dt,
+            repeat_until="not-a-date",  # type: ignore[arg-type]
+            tz_name="Europe/Berlin",
+        )

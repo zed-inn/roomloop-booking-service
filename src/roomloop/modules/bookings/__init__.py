@@ -12,7 +12,6 @@ from roomloop.modules.bookings.model import BookingModel, SeriesModel
 from roomloop.modules.bookings.repository import BookingRepository
 from roomloop.modules.bookings.routes import (
     create_bookings_router,
-    create_series_router,
 )
 from roomloop.modules.bookings.service import BookingService
 
@@ -30,5 +29,4 @@ __all__ = [
     "SeriesModel",
     "SkippedInstance",
     "create_bookings_router",
-    "create_series_router",
 ]

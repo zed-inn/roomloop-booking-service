@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from typing import Any
 
 from sqlalchemy import Connection, Engine, create_engine, event, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import ConnectionPoolEntry
 
@@ -108,7 +109,7 @@ class DatabaseConnection:
                 if not isinstance(raw_result, int):
                     return False
                 return raw_result == 1
-        except (sqlite3.Error, OSError, Exception) as err:  # noqa: BLE001
+        except (sqlite3.Error, OSError, SQLAlchemyError) as err:
             app_logger.error("[Database Connection] Health check ping failed: %s", err)
             return False
 

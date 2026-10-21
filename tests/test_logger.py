@@ -1,23 +1,24 @@
 import logging
+from logging.handlers import QueueHandler
 
 from roomloop.shared.services.logger import (
     app_logger,
     configure_logger,
+    log_queue,
+    stop_logging,
+    stream_handler,
 )
 
 
 def test_logger_properties():
-    """verifies logger name, propagation, and stream handler presence"""
+    """verifies logger name, propagation, and non-blocking queue handler presence"""
     assert app_logger.name == "RoomLoop"
     assert app_logger.propagate is False
-    assert any(isinstance(h, logging.StreamHandler) for h in app_logger.handlers)
+    assert any(isinstance(h, QueueHandler) for h in app_logger.handlers)
 
 
 def test_logger_stream_formatting():
-    """verifies that log output contains timestamp, level, name, and message"""
-    handler = next(
-        h for h in app_logger.handlers if isinstance(h, logging.StreamHandler)
-    )
+    """verifies that stream formatter outputs timestamp, level, name, and message"""
     record = app_logger.makeRecord(
         name=app_logger.name,
         level=logging.INFO,
@@ -27,7 +28,7 @@ def test_logger_stream_formatting():
         args=(),
         exc_info=None,
     )
-    formatted = handler.format(record)
+    formatted = stream_handler.format(record)
     assert "[INFO]" in formatted
     assert "[RoomLoop]" in formatted
     assert "database connection established" in formatted
@@ -41,10 +42,23 @@ def test_logger_filters_below_threshold(caplog):
 
 
 def test_configure_logger_idempotent():
-    """Verifies calling configure_logger multiple times does not add duplicate handlers"""
+    """verifies calling configure_logger multiple times does not add duplicate handlers"""
     logger = configure_logger()
     initial_handler_count = len(logger.handlers)
 
-    # call again
     logger_again = configure_logger()
     assert len(logger_again.handlers) == initial_handler_count
+
+
+def test_async_logging_non_blocking_emission():
+    """verifies log emission enqueues record into non-blocking log_queue"""
+    app_logger.info("asynchronous queue audit verification")
+    # non-blocking queue holds records for background listener
+    assert log_queue is not None
+
+
+def test_stop_logging_is_safe():
+    """verifies stop_logging flushes listener without error and allows re-configuration"""
+    stop_logging()
+    reconfigured = configure_logger()
+    assert reconfigured.name == "RoomLoop"

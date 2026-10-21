@@ -34,7 +34,7 @@ def test_audit_logs_record_single_booking(audit_test_setup):
         "end": "2026-11-12T11:00:00",
         "user": "audit-tester",
     }
-    res = client.post("/bookings", json=payload)
+    res = client.post("/api/v1/bookings", json=payload)
     assert res.status_code == 201
 
     repo = AuditLogRepository(db)
@@ -58,7 +58,7 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
     client, db = audit_test_setup
 
     client.post(
-        "/bookings/recurring",
+        "/api/v1/bookings/recurring",
         json={
             "room_id": 9,
             "start": "2026-11-05T09:00:00",
@@ -69,7 +69,7 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
     )
 
     client.post(
-        "/bookings/recurring",
+        "/api/v1/bookings/recurring",
         json={
             "room_id": 9,
             "start": "2026-11-05T09:00:00",
@@ -80,7 +80,7 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
     )
 
     client.post(
-        "/bookings",
+        "/api/v1/bookings",
         json={
             "room_id": 4,
             "start": "2026-11-26T14:00:00",
@@ -89,7 +89,7 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
         },
     )
     client.post(
-        "/bookings/recurring",
+        "/api/v1/bookings/recurring",
         json={
             "room_id": 4,
             "start": "2026-11-26T14:00:00",
@@ -105,3 +105,79 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
     assert "SERIES_CREATED" in event_types
     assert "SERIES_ROLLED_BACK" in event_types
     assert "CONFLICT_SKIPPED" in event_types
+
+
+def test_audit_logs_record_all_six_lifecycle_events(audit_test_setup):
+    """exhaustively verifies that all 6 lifecycle events are written and contain valid details_json"""
+    client, db = audit_test_setup
+
+    # 1. BOOKING_CREATED & 2. BOOKING_CANCELLED
+    b = client.post(
+        "/api/v1/bookings",
+        json={
+            "room_id": 3,
+            "start": "2026-11-18T09:00:00",
+            "end": "2026-11-18T10:00:00",
+            "user": "alice",
+        },
+    ).json()
+    client.delete(f"/api/v1/bookings/{b['id']}")
+
+    # 3. SERIES_CREATED & 4. CONFLICT_SKIPPED & 5. SERIES_CANCELLED
+    # create conflict blocker
+    client.post(
+        "/api/v1/bookings",
+        json={
+            "room_id": 4,
+            "start": "2026-11-19T10:00:00",
+            "end": "2026-11-19T11:00:00",
+            "user": "blocker",
+        },
+    )
+    s = client.post(
+        "/api/v1/bookings/recurring",
+        json={
+            "room_id": 4,
+            "start": "2026-11-12T10:00:00",
+            "end": "2026-11-12T11:00:00",
+            "user": "series-creator",
+            "repeat_until": "2026-11-26",
+        },
+    ).json()
+    client.delete(f"/api/v1/bookings/series/{s['series_id']}")
+
+    # 6. SERIES_ROLLED_BACK
+    client.post(
+        "/api/v1/bookings/recurring",
+        json={
+            "room_id": 4,
+            "start": "2026-11-19T10:00:00",
+            "end": "2026-11-19T11:00:00",
+            "user": "doomed-series",
+            "repeat_until": "2026-11-19",
+        },
+    )
+
+    repo = AuditLogRepository(db)
+    all_logs = repo.list_events(limit=50)
+    event_map = {l.event_type: l for l in all_logs}
+
+    expected_events = [
+        "BOOKING_CREATED",
+        "BOOKING_CANCELLED",
+        "SERIES_CREATED",
+        "CONFLICT_SKIPPED",
+        "SERIES_CANCELLED",
+        "SERIES_ROLLED_BACK",
+    ]
+    for ev in expected_events:
+        assert ev in event_map, f"Missing expected audit event: {ev}"
+        parsed_details = json.loads(event_map[ev].details_json)
+        assert isinstance(parsed_details, dict)
+
+
+def test_audit_repository_requires_database_connection():
+    """verifies calling list_events on repository without db raises RuntimeError"""
+    repo = AuditLogRepository(db=None)
+    with pytest.raises(RuntimeError):
+        repo.list_events()

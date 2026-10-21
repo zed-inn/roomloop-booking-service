@@ -30,7 +30,7 @@ def test_concurrent_booking_requests_prevent_race_conditions(tmp_path):
     def attempt_booking(worker_id: int):
         with TestClient(server.fastapi.app) as client:
             return client.post(
-                "/bookings",
+                "/api/v1/bookings",
                 json={**slot_payload, "user": f"worker-{worker_id}"},
             )
 

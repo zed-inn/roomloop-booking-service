@@ -27,15 +27,12 @@ class RoomRepository:
         """fetches room by primary key id if active, optionally reusing an active session"""
         if not isinstance(room_id, int) or room_id <= 0:
             return None
+        stmt = select(RoomModel).where(
+            RoomModel.id == room_id, RoomModel.is_active.is_(True)
+        )
         if session is not None:
-            stmt = select(RoomModel).where(
-                RoomModel.id == room_id, RoomModel.is_active.is_(True)
-            )
             return session.scalars(stmt).first()
         with self.db.get_session() as s:
-            stmt = select(RoomModel).where(
-                RoomModel.id == room_id, RoomModel.is_active.is_(True)
-            )
             return s.scalars(stmt).first()
 
     def create(self, room: RoomModel) -> RoomModel:

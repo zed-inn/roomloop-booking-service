@@ -15,8 +15,16 @@ def create_rooms_router(db: DatabaseConnection) -> APIRouter:
 
     router = APIRouter(tags=["rooms"])
 
-    @router.get("", response_model=list[RoomResponse])
+    @router.get(
+        "",
+        response_model=list[RoomResponse],
+        summary="List active bookable rooms",
+        responses={
+            200: {"description": "Active meeting room catalog adhering to Contract C2"}
+        },
+    )
     async def get_rooms() -> list[RoomResponse]:
+        """fetches all active bookable meeting rooms returning id, name, and capacity"""
         return await controller.get_rooms()
 
     return router

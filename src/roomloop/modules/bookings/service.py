@@ -285,6 +285,17 @@ class BookingService:
                     detail=f"Booking with id {booking_id} not found",
                 )
 
+            if booking.series_id is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Booking with id {booking_id} belongs to recurring series {booking.series_id}. "
+                        "Individual series instances cannot be cancelled separately. "
+                        f"Cancel the entire series via DELETE /api/v1/bookings/series/{booking.series_id} "
+                        "to cancel all future occurrences."
+                    ),
+                )
+
             if booking.status != "cancelled":
                 self.booking_repo.cancel_booking(session, booking, now_utc)
                 self.audit_repo.record_event(

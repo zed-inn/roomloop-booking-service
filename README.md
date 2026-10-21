@@ -1,66 +1,12 @@
 # RoomLoop — Meeting Room Booking Core Service
 
-A production-grade meeting room booking core service written in Python 3.12, FastAPI, and SQLAlchemy 2.0+, built according to strict Clean Architecture principles.
+RoomLoop is a meeting room booking core service built with **Python 3.12**, **FastAPI**, and **SQLAlchemy 2.0+**.
 
-Designed specifically to eliminate concurrency double-bookings, multi-office daylight saving time (DST) shifts between Berlin and Denver, and orphaned recurring series.
+The service was redesigned and rebuilt from scratch to replace an earlier prototype that suffered from three major issues:
 
----
-
-## Key Highlights
-
-- **Clean Class-Based Architecture**: Separation of concerns across Domain Contracts (Pydantic v2 DTOs), ORM Models (SQLAlchemy 2.0 mapped columns), Persistence Repositories, Domain Business Services, HTTP Controllers, and FastApi Routers.
-- **Strict Concurrency Guarantees**: SQLite Write-Ahead Logging (`PRAGMA journal_mode=WAL`) coupled with eager `BEGIN IMMEDIATE` transaction write locks that eliminate race conditions and serialize conflict checks without double bookings.
-- **Multi-Office Wall-Clock Stability**: Room-local naive ISO timestamp storage (`YYYY-MM-DDTHH:MM:SS`) preserving meeting wall-clock times (e.g. `09:00:00`) across DST transitions in both `Europe/Berlin` and `America/Denver` without UTC offset drift.
-- **Conflict Policy (R1/R2 Reconciliation)**: Upfront recurrence expansion governed by the **50% + Max 2 Conflict Policy**—at most 2 conflicting instances are skipped per series provided at least 50% and at least 1 booking succeeds; otherwise an atomic all-or-nothing rollback occurs.
-- **Series Cancellation & Historical Preservation (OM-1)**: `DELETE /series/{id}` soft-deletes future occurrences based on room-local current time while leaving past and in-progress meetings intact for audit reporting. Frees room slots immediately.
-- **Dual-Layer Logging**: Real-time structured application logs alongside an immutable SQLite `audit_logs` table tracking every booking creation, skip, rollback, and cancellation.
-
----
-
-## System Architecture
-
-```text
-src/roomloop/
-├── api/
-│   └── v1/
-│       └── router.py                 # Top-level API v1 router mounting feature modules
-├── config/
-│   ├── env.py                        # Strict Pydantic environment configuration (Zod pattern)
-│   ├── database.py                   # Engine lifecycle, SQLite WAL pragma, BEGIN IMMEDIATE hook
-│   └── fastapi.py                    # FastApi application factory and middleware configuration
-├── modules/
-│   ├── audit/                        # Audit domain module
-│   │   ├── model.py                  # AuditLogModel SQLAlchemy entity
-│   │   ├── repository.py             # AuditLogRepository persistence operations
-│   │   └── service.py                # AuditService query access
-│   ├── bookings/                     # Booking domain module
-│   │   ├── contract.py               # Pydantic request & response DTOs (extra='forbid')
-│   │   ├── controller.py             # HTTP endpoint request/response coordinator
-│   │   ├── model.py                  # SeriesModel & BookingModel SQLAlchemy entities
-│   │   ├── repository.py             # Conflict detection, creation, and soft-deletion queries
-│   │   ├── routes.py                 # FastApi route bindings (/bookings, /series)
-│   │   └── service.py                # Business logic: DST validation, 50% rule, atomic transactions
-│   └── rooms/                        # Rooms domain module
-│       ├── contract.py               # RoomResponse DTO strictly enforcing Contract C2
-│       ├── controller.py             # RoomController
-│       ├── model.py                  # RoomModel persistent entity
-│       ├── repository.py             # RoomRepository with session-reuse support
-│       ├── routes.py                 # FastApi route bindings (/rooms)
-│       └── service.py                # RoomService
-├── seeding/
-│   ├── __main__.py                   # Standalone seed CLI runner
-│   └── seeder.py                     # Idempotent seeder for prototype rooms (3, 4, 9, 17)
-├── shared/
-│   ├── middlewares/
-│   │   └── request_logger.py         # HTTP latency and request logging middleware
-│   ├── models/
-│   │   └── base.py                   # DeclarativeBase for SQLAlchemy ORM
-│   ├── services/
-│   │   └── logger.py                 # Structured application stream logger
-│   └── utils/
-│       └── time.py                   # Strict ISO parsing, DST gap/fold checks, weekly recurrence
-└── server.py                         # Application Composition Root and Uvicorn runner
-```
+1. **Concurrency Race Conditions**: Concurrent requests could book the same room at the same time, leading to double bookings.
+2. **Multi-Office Timezone Drift**: Denver meetings drifted by one hour every winter because UTC conversions failed to account for regional daylight saving time (DST) shifts between Berlin and Denver.
+3. **Orphaned Recurring Bookings**: Teams dissolved, leaving recurring bookings occupying rooms indefinitely with no easy way to cancel future slots while keeping past records for reporting.
 
 ---
 
@@ -69,16 +15,16 @@ src/roomloop/
 ### Prerequisites
 
 - **Python 3.12+**
-- **uv** (ultra-fast Python package and project manager)
+- **uv** (fast Python package and project manager)
 
 ```bash
-# install uv if not already present
+# install uv if not already installed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 ### 1. Installation
 
-Clone the repository and sync dependencies:
+Clone the repository and install dependencies:
 
 ```bash
 git clone <repository_url>
@@ -94,45 +40,129 @@ Initialize the database schema and populate the prototype rooms (`[3, 4, 9, 17]`
 make seed
 ```
 
-_(Alternatively: `uv run python -m roomloop.seeding`)_
+> [!IMPORTANT]
+> Always run `make seed` before starting the server. Seeding is decoupled from the server startup sequence so that deployments never inadvertently mutate existing data.
 
-### 3. Run the Development Server
+### 3. Start the Server
 
-Start the REST API service on `http://localhost:8000`:
+Run the development server on `http://localhost:8000`:
 
 ```bash
 make dev
 ```
 
-_(Alternatively: `uv run python -m roomloop.server` or `uv run python main.py`)_
-
-Interactive OpenAPI Swagger documentation is available at:
-**[http://localhost:8000/docs](http://localhost:8000/docs)**
+Interactive OpenAPI documentation is available at: **[http://localhost:8000/docs](http://localhost:8000/docs)**
 
 ---
 
-## Make Commands Reference
+## Project Architecture
 
-| Command             | Action                                                                     |
-| ------------------- | -------------------------------------------------------------------------- |
-| `make dev`          | Start development server on `localhost:8000`                               |
-| `make start`        | Start production server                                                    |
-| `make seed`         | Idempotently seed prototype rooms into SQLite                              |
-| `make test`         | Run complete pytest test suite                                             |
-| `make test-v`       | Run pytest suite with verbose output                                       |
-| `make lint`         | Run Ruff linter checks across `src/` and `tests/`                          |
-| `make format`       | Auto-format codebase using Ruff                                            |
-| `make format-check` | Check code formatting compliance                                           |
-| `make verify`       | Run full quality gate: linter, format-check, and 55 unit/integration tests |
-| `make clean`        | Clean build artifacts, pycache, and temporary test databases               |
+The codebase follows a modular Clean Architecture where business rules, database queries, and HTTP concerns are strictly separated:
+
+```text
+src/roomloop/
+├── api/
+│   └── v1/
+│       └── router.py                 # API v1 top-level router mounting all domain modules
+├── config/
+│   ├── env.py                        # Environment variable validation with strict types
+│   ├── database.py                   # Engine configuration, SQLite WAL mode, BEGIN IMMEDIATE lock
+│   └── fastapi.py                    # FastAPI application factory and middleware registration
+├── modules/
+│   ├── audit/                        # Audit domain: logs all booking creations, skips, cancellations
+│   │   ├── model.py                  # AuditLogModel entity
+│   │   ├── repository.py             # Append-only audit persistence
+│   │   └── service.py                # Audit querying service
+│   ├── bookings/                     # Booking domain: single & recurring reservations
+│   │   ├── contract.py               # Pydantic request & response DTOs (extra="forbid")
+│   │   ├── controller.py             # HTTP request dispatchers
+│   │   ├── model.py                  # SeriesModel & BookingModel ORM entities
+│   │   ├── repository.py             # Half-open interval conflict detection and queries
+│   │   ├── routes.py                 # FastApi route bindings (/api/v1/bookings)
+│   │   └── service.py                # Business logic: DST validation, 50% rule, atomic transactions
+│   └── rooms/                        # Rooms domain: facilities inventory
+│       ├── contract.py               # RoomResponse DTO strictly adhering to Contract C2
+│       ├── controller.py             # RoomController
+│       ├── model.py                  # RoomModel ORM entity
+│       ├── repository.py             # Room lookup with active session reuse
+│       ├── routes.py                 # FastApi route bindings (/rooms, /api/v1/rooms)
+│       └── service.py                # Room querying service
+├── seeding/
+│   ├── __main__.py                   # Standalone seed CLI runner
+│   └── seeder.py                     # Idempotent room seeder
+├── shared/
+│   ├── middlewares/
+│   │   └── request_logger.py         # Request latency and HTTP traffic logger
+│   ├── models/
+│   │   ├── base.py                   # SQLAlchemy DeclarativeBase
+│   │   └── registry.py               # Dynamic model registry loading schemas into Base metadata
+│   ├── services/
+│   │   └── logger.py                 # Structured application stream logger
+│   └── utils/
+│       └── time.py                   # Strict ISO parsing, DST gap/fold checks, weekly recurrence
+└── server.py                         # Application Composition Root and Uvicorn server runner
+```
 
 ---
 
-## REST API Specification
+## Core Engineering Solutions
+
+### 1. Zero Double-Bookings under Concurrency (`BEGIN IMMEDIATE` + WAL)
+
+In SQLite, transactions run in `DEFERRED` mode by default, meaning write locks are only acquired when a `INSERT` or `UPDATE` is issued. If two users check for available slots at the exact same moment, both read queries see the slot as free before either writes, resulting in double bookings.
+
+**How we solved it**:
+
+1. Enabled Write-Ahead Logging (`PRAGMA journal_mode=WAL`), allowing simultaneous readers without blocking writers.
+2. Hooked a `BEGIN IMMEDIATE` listener into SQLAlchemy's engine that immediately acquires an exclusive write lock at the start of any booking transaction.
+
+This serializes conflicting requests before overlap checks execute. Tested with 8 concurrent worker threads: exactly 1 booking succeeds and 7 fail with `409 Conflict`, with zero double bookings.
+
+### 2. Multi-Office Wall-Clock Time Stability (Solving Denver's Winter Drift)
+
+The company has offices in Berlin (`Europe/Berlin`) and Denver (`America/Denver`). Converting meeting times to UTC and adding 7 days in seconds causes local meeting times to drift by an hour when regional DST transition dates do not align.
+
+**How we solved it**:
+
+1. Stored all timestamps as naive local ISO strings (`YYYY-MM-DDTHH:MM:SS`) in the room's timezone, satisfying Contract C1 for the nightly reporting script.
+2. Handled weekly recurrence by adding 7 calendar days directly to the local wall-clock time (`current_start + timedelta(days=7)`), ensuring a 09:00 meeting stays at 09:00 local time year-round.
+3. Verified local times against `zoneinfo.ZoneInfo` to reject non-existent spring-forward transition times (e.g., 02:30 during Berlin spring-forward) with `422 Unprocessable Entity`.
+
+### 3. Recurring Booking Conflict Policy ("50% + Max 2 Conflict" Rule)
+
+The brief presented an apparent contradiction: Rule R1 requires recurring bookings to be all-or-nothing, while Rule R2 allows skipping up to 2 conflicting instances.
+
+**How we reconciled them**:
+A series is accepted if and only if:
+
+- Conflicts $\le 2$ (Rule R2).
+- At least 50% of requested bookings succeed.
+- At least 1 booking is created.
+
+If more than 2 instances conflict or the success rate drops below 50%, an atomic rollback occurs returning `409 Conflict` (Rule R1).
+
+### 4. Series Cancellation & Historical Preservation (Solving OM-1)
+
+When an abandoned recurring series is cancelled via `DELETE /api/v1/bookings/series/{id}`:
+
+- The system checks the current time in the room's timezone.
+- Meetings already concluded or underway remain `status="active"` for historical reporting (Contract C1).
+- All future meetings are soft-deleted (`status="cancelled"`), immediately freeing those slots for new bookings.
+
+Individual occurrences of a recurring series cannot be cancelled via `DELETE /api/v1/bookings/{id}` (`400 Bad Request`); cancelling a series must cancel all future occurrences to preserve series integrity.
+
+### 5. Non-Blocking Asynchronous Queue Logging & Environment Isolation
+
+- **Non-blocking logging**: Real-time logging utilizes Python's standard `QueueHandler` and `QueueListener` on a dedicated background thread. Requests push log records instantaneously into an in-memory queue, ensuring stdout terminal I/O latency never blocks async HTTP request loops.
+- **Strict environment isolation**: `make start` runs with `ENVIRONMENT=production`, `make dev` runs with `ENVIRONMENT=development`, and test runs (`make test`, `make test-v`, `make verify`) strictly enforce `ENVIRONMENT=test`.
+
+---
+
+## REST API Reference
 
 ### 1. List Rooms (`GET /rooms` or `GET /api/v1/rooms`)
 
-Complies strictly with Contract C2 returning only `id`, `name`, and `capacity`.
+Complies strictly with Contract C2, returning only `id`, `name`, and `capacity` so external dashboards never break.
 
 ```bash
 curl -X GET http://localhost:8000/rooms
@@ -143,26 +173,26 @@ curl -X GET http://localhost:8000/rooms
 ```json
 [
   { "id": 3, "name": "Neukölln", "capacity": 8 },
-  { "id": 4, "name": "Kreuzberg", "capacity": 12 },
-  { "id": 9, "name": "LoDo", "capacity": 6 },
-  { "id": 17, "name": "RiNo", "capacity": 16 }
+  { "id": 4, "name": "Red Rocks", "capacity": 4 },
+  { "id": 9, "name": "Kreuzberg", "capacity": 12 },
+  { "id": 17, "name": "Flatirons", "capacity": 6 }
 ]
 ```
 
 ---
 
-### 2. Create Single Booking (`POST /bookings`)
+### 2. Create Single Booking (`POST /api/v1/bookings`)
 
-Creates a single booking instance. Validates room existence, DST gap validity, and zero half-open interval conflicts.
+Creates an individual meeting reservation.
 
 ```bash
-curl -X POST http://localhost:8000/bookings \
+curl -X POST http://localhost:8000/api/v1/bookings \
   -H "Content-Type: application/json" \
   -d '{
     "room_id": 3,
     "start": "2026-11-10T09:00:00",
     "end": "2026-11-10T10:00:00",
-    "user": "alice"
+    "user": "alex"
   }'
 ```
 
@@ -173,22 +203,22 @@ curl -X POST http://localhost:8000/bookings \
   "id": 1,
   "room_id": 3,
   "series_id": null,
-  "user": "alice",
+  "user": "alex",
   "start": "2026-11-10T09:00:00",
   "end": "2026-11-10T10:00:00",
   "status": "active",
-  "created_at_utc": "2026-10-21T15:40:00.123456+00:00"
+  "created_at_utc": "2026-10-21T18:00:00Z"
 }
 ```
 
 ---
 
-### 3. Create Recurring Booking (`POST /bookings/recurring`)
+### 3. Create Recurring Booking (`POST /api/v1/bookings/recurring`)
 
-Generates weekly occurrences upfront until `repeat_until`. Applies the **50% + Max 2 Conflict Rule**.
+Creates a weekly recurring series upfront, skipping up to 2 clashes under the 50% threshold rule.
 
 ```bash
-curl -X POST http://localhost:8000/bookings/recurring \
+curl -X POST http://localhost:8000/api/v1/bookings/recurring \
   -H "Content-Type: application/json" \
   -d '{
     "room_id": 4,
@@ -207,50 +237,56 @@ curl -X POST http://localhost:8000/bookings/recurring \
   "total_requested": 4,
   "created_count": 4,
   "skipped_count": 0,
-  "created": [
-    {
-      "id": 2,
-      "room_id": 4,
-      "series_id": 1,
-      "user": "engineering-team",
-      "start": "2026-11-04T14:00:00",
-      "end": "2026-11-04T15:00:00",
-      "status": "active",
-      "created_at_utc": "..."
-    }
-  ],
+  "created": [...],
   "skipped": []
 }
 ```
 
 ---
 
-### 4. Cancel Single Booking (`DELETE /bookings/{id}`)
+### 4. Cancel Single Booking (`DELETE /api/v1/bookings/{id}`)
 
-Soft-deletes an individual booking and frees the slot immediately for new bookings.
+Soft-deletes an individual standalone booking and immediately frees the time slot.
 
 ```bash
-curl -X DELETE http://localhost:8000/bookings/1
+curl -X DELETE http://localhost:8000/api/v1/bookings/1
 ```
 
-**Response (`200 OK`)**:
+**Success Response (`200 OK`)**:
 
 ```json
 {
   "id": 1,
   "status": "cancelled",
-  "cancelled_at_utc": "2026-10-21T15:45:00.000000+00:00"
+  "cancelled_at_utc": "2026-10-21T18:30:00Z"
+}
+```
+
+**Series Rejection Response (`400 Bad Request`)**:
+Attempting to delete an individual occurrence of a recurring series is rejected to protect series integrity. The entire series must be dissolved via `DELETE /api/v1/bookings/series/{series_id}`:
+
+```json
+{
+  "detail": "Booking with id 2 belongs to recurring series 1. Individual series instances cannot be cancelled separately. Cancel the entire series via DELETE /api/v1/bookings/series/1 to cancel all future occurrences."
+}
+```
+
+**Not Found Response (`404 Not Found`)**:
+
+```json
+{
+  "detail": "Booking with id 999 not found"
 }
 ```
 
 ---
 
-### 5. Cancel Recurring Series (`DELETE /series/{series_id}` or `DELETE /bookings/series/{series_id}`)
+### 5. Cancel Recurring Series (`DELETE /api/v1/bookings/series/{series_id}`)
 
-Resolves Office Manager complaint OM-1. Cancels all future instances of an abandoned series based on current time in the room's timezone, preserving past and in-progress meetings for reporting.
+Dissolves a recurring series, cancelling all future instances while preserving historical meetings.
 
 ```bash
-curl -X DELETE http://localhost:8000/series/1
+curl -X DELETE http://localhost:8000/api/v1/bookings/series/1
 ```
 
 **Response (`200 OK`)**:
@@ -258,67 +294,64 @@ curl -X DELETE http://localhost:8000/series/1
 ```json
 {
   "series_id": 1,
-  "cancelled_count": 4,
-  "kept_count": 0,
-  "cancelled_at_utc": "2026-10-21T15:50:00.000000+00:00"
+  "cancelled_count": 3,
+  "kept_count": 1,
+  "cancelled_at_utc": "2026-10-21T18:30:00Z"
 }
 ```
 
 ---
 
-### 6. Health Check (`GET /health`)
+### 6. System Health (`GET /health`)
+
+Reports application status and live database pool connectivity.
 
 ```bash
 curl -X GET http://localhost:8000/health
 ```
 
-**Response (`200 OK`)**:
+---
 
-```json
-{
-  "status": "ok",
-  "environment": "development",
-  "database": "connected"
-}
-```
+## Makefile Reference
+
+| Command             | Action                                                        |
+| ------------------- | ------------------------------------------------------------- |
+| `make dev`          | Start development server on `localhost:8000`                  |
+| `make start`        | Start production server (`ENVIRONMENT=production`)             |
+| `make seed`         | Idempotently seed prototype rooms into SQLite                 |
+| `make test`         | Run complete pytest test suite (`ENVIRONMENT=test`)           |
+| `make test-v`       | Run pytest suite with verbose output                          |
+| `make lint`         | Run Ruff linter checks across `src/` and `tests/`             |
+| `make format`       | Auto-format codebase using Ruff                               |
+| `make format-check` | Check code formatting compliance                              |
+| `make verify`       | Run full quality gate: linter, format check, and all 92 tests |
+| `make clean`        | Clean pycache, pytest caches, and temporary test databases    |
 
 ---
 
-## Concurrency & Data Integrity
+## Test Suite & Quality Gate
 
-In SQLite, transactions default to `DEFERRED`, meaning write locks are delayed until a mutation query executes. If two concurrent requests check for overlapping meetings simultaneously, both could find zero conflicts and insert overlapping rows.
-
-RoomLoop eliminates this race condition via two database lifecycle event hooks in `DatabaseConnection`:
-
-1. `PRAGMA journal_mode = WAL`: Enables Write-Ahead Logging for high-throughput concurrent readers.
-2. `BEGIN IMMEDIATE` Hook: Eagerly acquires an exclusive write lock at transaction start, serializing concurrent booking attempts before overlap checks take place.
-
-Verified with 8 concurrent worker threads in `tests/test_concurrency.py`: exactly 1 request succeeds (201 Created) and 7 are rejected (409 Conflict), guaranteeing zero double-bookings.
-
----
-
-## Test Suite & Verification
-
-The test suite covers **55 automated tests** across 11 test modules:
+The test suite covers **92 automated tests** across 11 test modules:
 
 ```bash
 $ make verify
 uv run ruff check src tests
 All checks passed!
 uv run ruff format --check src tests
-48 files already formatted
-uv run pytest
-============================== 55 passed in 1.65s ==============================
+50 files already formatted
+ENVIRONMENT=test uv run pytest
+============================== 92 passed in 3.38s ==============================
 ```
 
 ### Risk Scenarios Tested
 
-- **Denver DST Transition**: Recurring bookings retain `09:00:00` wall-clock time across the 2026-11-01 Denver DST boundary (`test_denver_dst_transition_preserves_wall_clock_time`).
-- **Berlin DST Transition**: Recurring bookings retain `09:00:00` wall-clock time across the 2026-10-25 Berlin DST boundary (`test_berlin_dst_transition_preserves_wall_clock_time`).
-- **Spring-Forward DST Gaps**: Rejects non-existent local wall times (e.g. Berlin 02:30 on 2027-03-28) with 422 (`test_single_booking_dst_gap_rejected`).
-- **R1/R2 Conflict Threshold**: Verifies 4-week series with 2 conflicts succeeds with 2 skipped (50% rule), while 2-week series with 2 conflicts (0% success) or 10-week series with 3 conflicts ($>2$) triggers atomic rollback (`tests/test_bookings.py`).
-- **Series Cancellation & Historical Preservation**: Verifies future series instances are cancelled, past instances are kept intact, and cancelled slots are immediately bookable again (`tests/test_cancellation.py`).
-- **Contract C2 Integrity**: Verifies `GET /rooms` returns exact JSON keys `{id, name, capacity}` for prototype IDs `3, 4, 9, 17` (`tests/test_rooms.py`).
-- **Refutation of Sequential Room IDs**: Non-existent rooms `1` and `2` return 404; code does not assume `1..N` (`test_r5_sequential_assumption_refuted`).
-- **High Concurrency Serialization**: 8 simultaneous worker threads attempting to book the exact same slot result in exactly 1 success and 7 rejections without database corruption (`tests/test_concurrency.py`).
-- **Audit Trail Immutability**: All creation, skip, rollback, and cancellation events are verified in the `audit_logs` table (`tests/test_audit.py`).
+- **Denver Winter DST Transition**: Weekly recurrence across the 2026-11-01 Denver DST boundary retains `09:00:00` local time without hour drift.
+- **Berlin Autumn DST Transition**: Weekly recurrence across the 2026-10-25 Berlin DST boundary retains `09:00:00` local time.
+- **Spring-Forward DST Gaps**: Rejects non-existent local wall times (e.g., Berlin 02:30 on 2027-03-28) with `422`.
+- **R1/R2 Conflict Thresholds**: 4-week series with 2 conflicts succeeds with 2 skipped (50% rule), while a 2-week series with 2 conflicts (0% success) or a series with 3 conflicts ($>2$) triggers an atomic rollback (`409`).
+- **Series Cancellation & Historical Preservation**: Verifies future series instances are cancelled, past instances remain active, and cancelled slots are immediately bookable again.
+- **Series Integrity**: Forbids cherry-picking individual series instances via `DELETE /api/v1/bookings/{id}`, requiring whole-series dissolution.
+- **Contract C2 Integrity**: Verifies `GET /rooms` returns exact keys `{id, name, capacity}` for prototype IDs `3, 4, 9, 17`.
+- **Strict API Versioning**: Confirms `/api/v1/bookings` is enforced while unversioned `GET /rooms` is isolated for legacy dashboard compatibility.
+- **High Concurrency Serialization**: 8 simultaneous worker threads attempting to book the exact same slot result in exactly 1 success and 7 rejections without database corruption.
+- **Immutable Audit Trail**: All 6 lifecycle events are verified in the `audit_logs` table.

@@ -60,14 +60,24 @@ def test_health_check_endpoint_reflects_injected_database(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_server_prerequisites_and_shutdown(tmp_path):
-    """verifies server lifecycle start_prerequisites and shutdown with injected database"""
+async def test_server_prerequisites_and_shutdown(tmp_path, caplog):
+    """verifies server lifecycle start_prerequisites and shutdown without running seeder automatically"""
+    import logging
+
+    from roomloop.modules.rooms.model import RoomModel
+
     test_db_path = str(tmp_path / "prereq_test.db")
     test_db = DatabaseConnection(db_path=test_db_path)
     test_server = Server(database=test_db)
 
-    await test_server.start_prerequisites()
-    assert test_server.database.is_connected is True
+    with caplog.at_level(logging.INFO, logger="RoomLoop"):
+        await test_server.start_prerequisites()
+        assert test_server.database.is_connected is True
+        assert "run seeder before dev/start" in caplog.text
+
+    # verify seeder was not run automatically
+    with test_db.get_session() as session:
+        assert session.query(RoomModel).count() == 0
 
     await test_server.shutdown()
     assert test_server.database.is_connected is False

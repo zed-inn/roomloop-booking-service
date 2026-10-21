@@ -10,12 +10,8 @@ from roomloop.api.v1.router import register_api_v1_routes
 from roomloop.config.database import DatabaseConnection
 from roomloop.config.env import env
 from roomloop.config.fastapi import FastApiApp
-from roomloop.modules.audit.model import AuditLogModel  # noqa: F401
-from roomloop.modules.bookings.model import BookingModel, SeriesModel  # noqa: F401
-from roomloop.modules.rooms.model import RoomModel  # noqa: F401
-from roomloop.seeding.seeder import DatabaseSeeder
-from roomloop.shared.models.base import Base
-from roomloop.shared.services.logger import app_logger
+from roomloop.shared.models import Base, register_models
+from roomloop.shared.services.logger import app_logger, stop_logging
 
 
 class ListenerOpts(BaseModel):
@@ -52,8 +48,19 @@ class Server:
         """mounts routes, health check, and database state onto fastapi instance"""
         self.fastapi.app.state.db = self.database
 
-        @self.fastapi.app.get("/health", tags=["system"])
+        @self.fastapi.app.get(
+            "/health",
+            tags=["system"],
+            summary="System health check",
+            responses={
+                200: {"description": "Service is healthy and connected to database"},
+                503: {
+                    "description": "Service is degraded due to database connectivity failure"
+                },
+            },
+        )
         async def health() -> JSONResponse:
+            """reports application operational status and database connection health"""
             is_healthy: bool = self.database.check_connection()
             status_code: int = 200 if is_healthy else 503
             return JSONResponse(
@@ -68,15 +75,17 @@ class Server:
         register_api_v1_routes(self.fastapi.app, db=self.database)
 
     async def start_prerequisites(self) -> None:
-        """initializes database connection, ensures schema tables exist, and seeds prototype data"""
+        """initializes database connection, ensures schema tables exist, and reminds operator to seed if needed"""
         app_logger.info("[Server] Starting prerequisites...")
         self.database.connect()
         if not self.database.check_connection():
             raise RuntimeError("[Server] Database health check failed during boot")
 
+        register_models()
         Base.metadata.create_all(bind=self.database.engine)
-        seeder = DatabaseSeeder(self.database)
-        seeder.seed_all()
+        app_logger.info(
+            "[Server] Note: Please run seeder before dev/start if rooms are not seeded ('make seed' or 'uv run python -m roomloop.seeding')"
+        )
 
         app_logger.info("[Server] Prerequisites successfully initialized")
 
@@ -94,6 +103,7 @@ class Server:
             self.database.disconnect()
 
         app_logger.info("[Server] Shutdown complete")
+        stop_logging()
 
     async def start(self) -> None:
         """boots prerequisites and runs the uvicorn asgi listener"""
@@ -112,7 +122,7 @@ class Server:
                 self.listener_opts.port,
             )
             await self._uvicorn_server.serve()
-        except Exception as err:  # noqa: BLE001
+        except (RuntimeError, OSError, ValueError) as err:
             app_logger.error("[Server] Boot failure: %s", err)
             sys.exit(1)
         finally:

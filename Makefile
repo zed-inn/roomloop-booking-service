@@ -14,10 +14,10 @@ help:
 	@echo "  make clean        - Remove build artifacts, cache, and test databases"
 
 dev:
-	uv run python -m roomloop.server
+	ENVIRONMENT=development uv run python -m roomloop.server
 
 start:
-	uv run python -m roomloop.server
+	ENVIRONMENT=production uv run python -m roomloop.server
 
 seed:
 	uv run python -m roomloop.seeding
@@ -32,12 +32,13 @@ format-check:
 	uv run ruff format --check src tests
 
 test:
-	uv run pytest
+	ENVIRONMENT=test uv run pytest
 
 test-v:
-	uv run pytest -v
+	ENVIRONMENT=test uv run pytest -v
 
 verify: lint format-check test
 
 clean:
-	rm -rf .pytest_cache __pycache__ src/**/__pycache__ tests/__pycache__ *.db*
+	rm -rf .pytest_cache __pycache__ **/__pycache__/ tests/__pycache__ *.db*
+	rm -rf **/__pycache__/
