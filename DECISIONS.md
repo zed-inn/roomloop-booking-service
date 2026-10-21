@@ -145,9 +145,9 @@ This document details the architectural decisions, trade-offs, Product Manager q
    - *What AI Got Wrong*: When a series exceeded conflict thresholds, AI raised an HTTP 409 exception inside the active database session. This inadvertently rolled back the `SERIES_ROLLED_BACK` audit record along with the rejected bookings.
    - *Correction*: Refactored the service to explicitly rollback the booking session first, then commit the audit record in an independent transaction.
 
-5. **Argon's Flawed Conflict Rule**:
-   - *What AI Got Wrong*: AI referenced competitor code (Argon) that blindly skipped up to 2 conflicts without checking overall success rate, which caused a 2-instance series with 2 conflicts to create 0 bookings while returning success.
-   - *Correction*: Formulated and implemented the 50% threshold formula ensuring at least 1 booking succeeds and at least 50% of the series is created.
+5. **Flawed Conflict Skipping Logic (Empty Series Creation)**:
+   - *What AI Got Wrong*: AI proposed a naive interpretation of Rule R2 that blindly skipped up to 2 conflicts without checking the overall series success rate. Under this flawed logic, a 2-instance series with 2 conflicts would skip both and create 0 bookings while returning a misleading success response.
+   - *Correction*: Formulated and implemented the 50% threshold formula ensuring at least 1 booking succeeds and at least 50% of the series is created, atomically rolling back with `409 Conflict` otherwise.
 
 6. **Missing Spring-Forward DST Gap Validation**:
    - *What AI Got Wrong*: AI used naive date math that allowed non-existent local times (e.g., 02:30 during the Berlin spring-forward transition).
