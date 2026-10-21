@@ -10,6 +10,9 @@ from roomloop.api.v1.router import register_api_v1_routes
 from roomloop.config.database import DatabaseConnection
 from roomloop.config.env import env
 from roomloop.config.fastapi import FastApiApp
+from roomloop.modules.rooms.model import RoomModel  # noqa: F401
+from roomloop.seeding.seeder import DatabaseSeeder
+from roomloop.shared.models.base import Base
 from roomloop.shared.services.logger import app_logger
 
 
@@ -63,11 +66,17 @@ class Server:
         register_api_v1_routes(self.fastapi.app, db=self.database)
 
     async def start_prerequisites(self) -> None:
-        """initializes database connection and verifies health before binding port"""
+        """initializes database connection, ensures schema tables exist, and seeds prototype data"""
         app_logger.info("[Server] Starting prerequisites...")
         self.database.connect()
         if not self.database.check_connection():
             raise RuntimeError("[Server] Database health check failed during boot")
+
+        # ensure orm model tables exist in database
+        Base.metadata.create_all(bind=self.database.engine)
+        # execute initial seeding for prototype rooms
+        seeder = DatabaseSeeder(self.database)
+        seeder.seed_all()
 
         app_logger.info("[Server] Prerequisites successfully initialized")
 
