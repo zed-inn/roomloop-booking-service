@@ -74,6 +74,21 @@ This document details the architectural decisions, trade-offs, Product Manager q
   - `make test`, `make test-v`, `make verify`, and `conftest.py` strictly enforce `ENVIRONMENT=test`.
 - **Why It Matters**: Guarantees zero risk of accidental state leakage or misconfiguration across execution boundaries.
 
+### 13. First-Class Internal API Usability & Microservice Interoperability
+- **The Problem**: Internal microservices, backend workers, and web dashboards built by other teams need to consume RoomLoop reliably without protocol mismatches, cross-origin blocking, or tracing blind spots.
+- **The Decision**: Designed the service for universal internal API adoption:
+  1. *OpenAPI & Discovery*: Complete OpenAPI 3.1 specification exposed at `/openapi.json`, Swagger UI at `/docs`, and ReDoc at `/redoc`.
+  2. *CORS Support*: Permissive CORS middleware enabled (`allow_origins=["*"]`) so internal browser-based dashboards on different ports or domains can query the service without browser origin errors.
+  3. *Distributed Request Tracing (`X-Request-ID`)*: HTTP middleware extracts incoming `X-Request-ID` headers (or generates unique 12-char hex correlation IDs if omitted), returns them in response headers, and logs them alongside request duration in milliseconds for cross-service observability.
+  4. *Container Health Checks*: `/health` endpoint reporting service readiness, active environment, and live database pool connectivity (`200 OK` or `503 Service Unavailable`).
+  5. *Dual Integration Modes*: Internal clients can interact over standard HTTP REST or import the package directly in Python as an in-process ASGI sub-application (`main_app.mount("/roomloop", app)`) or via domain services without network latency.
+- **Why It Matters**: Enables any internal service (Python, Go, Node.js, frontend portals, or automated crons) to integrate with RoomLoop in minutes.
+
+### 14. Standard Entity Timestamps & Audit Metadata
+- **The Problem**: The prototype entities lacked creation, update, and deletion tracking, preventing operators from diagnosing when records were created or soft-deleted.
+- **The Decision**: Added standard ISO UTC timestamp columns (`created_at`, `updated_at`, `deleted_at`) across all entities (`rooms`, `bookings`, `series`, `audit_logs`).
+- **Why It Matters**: Provides full data lifecycle visibility, enables soft deletions without data loss, and supports auditing and compliance requirements.
+
 ---
 
 ## (b) Questions to Ask the Product Manager Before Shipping
@@ -163,3 +178,38 @@ This document details the architectural decisions, trade-offs, Product Manager q
 
 ### 5. Room Amenities & Capacity Filtering
 - **What to Build Next**: Add query filters to `GET /rooms` (e.g., `?min_capacity=10&has_video=true`) allowing teams to search rooms by physical capabilities.
+
+---
+
+### Phase 2: Enterprise Event-Driven Scale-Out Architecture
+
+In a global enterprise deployment handling thousands of rooms and millions of recurring meetings (similar to Google Calendar), generating years of instances upfront causes **database row explosion** and high write contention.
+
+The Phase 2 architecture scales the service across distributed nodes using the **Transactional Outbox Pattern** and **Just-In-Time (JIT) Rolling Instance Generation**:
+
+```mermaid
+flowchart TD
+  client["Client (REST / Internal Gateway)"] --> api["RoomLoop API Gateway"]
+  api --> tx["Local ACID Transaction"]
+  tx --> db_booking["Series & Recurring Schedule Table"]
+  tx --> outbox["Transactional Outbox Table"]
+  
+  outbox --> poller["Outbox Poller / Debezium CDC"]
+  poller --> mq["Distributed Broker (RabbitMQ / Redis / Kafka)"]
+  
+  mq --> worker["Instance Generation Worker (BullMQ / Celery)"]
+  worker --> db_instances["Instances Cache / Active Booking Table"]
+  
+  mq --> archiver["Archival Worker"]
+  archiver --> cold_storage[("Cold Storage / Data Lake (Past Bookings)")]
+```
+
+#### Key Components:
+1. **Transactional Outbox Pattern**:
+   Instead of writing hundreds of future booking rows inside the client request cycle, the API stores a single `recurring_schedule` row and an atomic `outbox_events` record in the database within a single local transaction. An asynchronous change-data-capture (CDC) agent or outbox poller reads events with lease-based row locking (`SELECT ... FOR UPDATE SKIP LOCKED`) and publishes them to the message broker.
+2. **Just-In-Time (JIT) Instance Generation via Delayed Queue**:
+   A distributed worker schedules instance generation jobs in 30-day rolling windows rather than all at once. This keeps active table indexes small and query latencies in the sub-millisecond range.
+3. **Optimistic Locking & Cancellation Distribution**:
+   Cancelling a series publishes a `SeriesCancelledEvent` to the message broker. A cancellation worker cancels pending delayed generation jobs and marks future rolling instances as cancelled, while archiving past completed meetings into cold storage (Parquet / S3 / ClickHouse) for reporting.
+4. **Exponential Backoff & Dead-Letter Queues (DLQ)**:
+   Worker tasks incorporate exponential backoff with jitter to handle database transient connection drops or lock contentions without data loss.

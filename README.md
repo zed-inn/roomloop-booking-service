@@ -24,11 +24,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ### 1. Installation
 
-Clone the repository and install dependencies:
+Clone the repository [roomloop-booking-service](https://github.com/zed-inn/roomloop-booking-service) and install dependencies:
 
 ```bash
-git clone <repository_url>
-cd AuricAiRoomLoopTask
+git clone https://github.com/zed-inn/roomloop-booking-service.git
+cd roomloop-booking-service
 uv sync
 ```
 
@@ -304,10 +304,64 @@ curl -X DELETE http://localhost:8000/api/v1/bookings/series/1
 
 ### 6. System Health (`GET /health`)
 
-Reports application status and live database pool connectivity.
+Reports application status, active environment, and live database pool connectivity.
 
 ```bash
 curl -X GET http://localhost:8000/health
+```
+
+**Response (`200 OK`)**:
+
+```json
+{
+  "status": "ok",
+  "environment": "development",
+  "database": "connected"
+}
+```
+
+---
+
+## Internal API & Microservice Integration Guide
+
+RoomLoop is built to be seamlessly consumed by other internal microservices, scheduled batch jobs, and internal web portals.
+
+### 1. HTTP REST & Gateway Consumption
+- **Machine-Readable OpenAPI 3.1 Spec**: Access the raw schema at `/openapi.json` or interactive docs at `/docs` (Swagger UI) and `/redoc` (ReDoc) to generate typed client SDKs (TypeScript, Go, Python, Java).
+- **Distributed Request Tracing (`X-Request-ID`)**:
+  Upstream services can pass an `X-Request-ID` header. RoomLoop preserves it, emits it with millisecond latency in structured logs (`[HTTP] POST /api/v1/bookings 201 - 1.25ms (request_id=...)`), and echoes it in the `X-Request-ID` response header. If omitted, RoomLoop generates a unique 12-char hex correlation ID.
+- **Cross-Origin Resource Sharing (CORS)**: Built-in `CORSMiddleware` allows requests from internal frontend dashboards hosted on other ports or domains without browser origin blocks.
+- **Predictable Error Semantics**:
+  - `400 Bad Request`: Disallowed operations (e.g., attempting to cherry-pick/delete individual recurring series occurrences).
+  - `404 Not Found`: Room or booking ID does not exist.
+  - `409 Conflict`: Double bookings, overlapping timeslots, or series exceeding 2 conflicts / failing the 50% success threshold.
+  - `422 Unprocessable Entity`: Timezone transition gaps (spring-forward), invalid naive ISO formats, or inverted start/end times.
+  - `503 Service Unavailable`: Database connectivity failure reported by `/health`.
+
+### 2. In-Process Python Sub-App or Library Usage
+For Python services in the same environment or monorepo, RoomLoop can be embedded without HTTP network overhead:
+
+**Mount as ASGI Sub-Application:**
+```python
+from fastapi import FastAPI
+from roomloop import app as roomloop_app
+
+gateway_app = FastAPI(title="Internal Developer Gateway")
+gateway_app.mount("/services/roomloop", roomloop_app)
+```
+
+**Direct Domain Service Invocation:**
+```python
+from roomloop import DatabaseConnection
+from roomloop.modules.bookings import BookingRepository, BookingService
+from roomloop.modules.rooms import RoomRepository
+
+db = DatabaseConnection()
+db.connect()
+
+room_repo = RoomRepository(db=db)
+booking_repo = BookingRepository(db=db)
+booking_service = BookingService(booking_repo=booking_repo, room_repo=room_repo)
 ```
 
 ---
@@ -324,14 +378,14 @@ curl -X GET http://localhost:8000/health
 | `make lint`         | Run Ruff linter checks across `src/` and `tests/`             |
 | `make format`       | Auto-format codebase using Ruff                               |
 | `make format-check` | Check code formatting compliance                              |
-| `make verify`       | Run full quality gate: linter, format check, and all 92 tests |
+| `make verify`       | Run full quality gate: linter, format check, and all 94 tests |
 | `make clean`        | Clean pycache, pytest caches, and temporary test databases    |
 
 ---
 
 ## Test Suite & Quality Gate
 
-The test suite covers **92 automated tests** across 11 test modules:
+The test suite covers **94 automated tests** across 11 test modules:
 
 ```bash
 $ make verify
@@ -340,7 +394,7 @@ All checks passed!
 uv run ruff format --check src tests
 50 files already formatted
 ENVIRONMENT=test uv run pytest
-============================== 92 passed in 3.38s ==============================
+============================== 94 passed in 4.49s ==============================
 ```
 
 ### Risk Scenarios Tested

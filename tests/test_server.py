@@ -97,3 +97,31 @@ def test_request_logging_middleware_logs_traffic(caplog):
 
     assert "[HTTP] GET /health" in caplog.text
     assert "ms" in caplog.text
+    assert "request_id=" in caplog.text
+
+
+def test_request_logging_middleware_request_id_propagation(caplog):
+    """verifies that incoming x-request-id is preserved and returned in headers and logs"""
+    import logging
+
+    test_server = Server()
+    with (
+        caplog.at_level(logging.INFO, logger="RoomLoop"),
+        TestClient(test_server.fastapi.app) as client,
+    ):
+        custom_id = "trace-internal-api-12345"
+        res = client.get("/health", headers={"X-Request-ID": custom_id})
+        assert res.headers.get("X-Request-ID") == custom_id
+        assert custom_id in caplog.text
+
+
+def test_top_level_package_exports():
+    """verifies that roomloop package cleanly exposes core server and database entries for internal API usage"""
+    import roomloop
+
+    assert hasattr(roomloop, "Server")
+    assert hasattr(roomloop, "app")
+    assert hasattr(roomloop, "server")
+    assert hasattr(roomloop, "DatabaseConnection")
+    assert hasattr(roomloop, "db_connection")
+    assert hasattr(roomloop, "__version__")
