@@ -1,12 +1,11 @@
 # RoomLoop — Meeting Room Booking Core Service
 
-RoomLoop is a meeting room booking core service built with **Python 3.12**, **FastAPI**, and **SQLAlchemy 2.0+**.
+RoomLoop is an internal meeting room booking core service for our company (~200 employees across Berlin and Denver), built with **Python 3.12**, **FastAPI**, and **SQLAlchemy 2.0+**.
 
-The service was redesigned and rebuilt from scratch to replace an earlier prototype that suffered from three major issues:
-
-1. **Concurrency Race Conditions**: Concurrent requests could book the same room at the same time, leading to double bookings.
-2. **Multi-Office Timezone Drift**: Denver meetings drifted by one hour every winter because UTC conversions failed to account for regional daylight saving time (DST) shifts between Berlin and Denver.
-3. **Orphaned Recurring Bookings**: Teams dissolved, leaving recurring bookings occupying rooms indefinitely with no easy way to cancel future slots while keeping past records for reporting.
+Rebuilt properly from scratch to replace an earlier quick prototype, the service provides reliable single and recurring room reservations while addressing core requirements and team feedback:
+- **Recurring Series Cancellation (OM-1)**: Resolves the Office Manager's primary complaint where dissolving teams left rooms booked for months, allowing seamless cancellation of an entire future series while keeping past meeting records intact for nightly reporting (Contract C1).
+- **Timezone Consistency Across Berlin & Denver (OM-2, R3)**: Eliminates the bug where Denver meetings showed up an hour off in winter, maintaining exact local wall-clock times across all Daylight Saving Time (DST) shifts.
+- **Robust Conflict & Overlap Prevention (R1, R2, R4)**: Enforces strict overlap checks and serializable transactions (`BEGIN IMMEDIATE` + WAL) to guarantee zero double-bookings, while accommodating occasional one-off clashes via smart conflict-skipping rules.
 
 ---
 
@@ -120,13 +119,15 @@ This serializes conflicting requests before overlap checks execute. Tested with 
 
 ### 2. Multi-Office Wall-Clock Time Stability (Solving Denver's Winter Drift)
 
-The company has offices in Berlin (`Europe/Berlin`) and Denver (`America/Denver`). Converting meeting times to UTC and adding 7 days in seconds causes local meeting times to drift by an hour when regional DST transition dates do not align.
+The company has offices in Berlin (`Europe/Berlin`) and Denver (`America/Denver`). The Office Manager reported that half of Denver's bookings showed up an hour off in winter.
+- **Root Cause Hypotheses**:
+  1. *UTC Math Drift*: Converting meeting times to UTC and adding 7 days in seconds ($7 \times 86400$) causes drift because Berlin and Denver shift DST on different calendar dates (e.g., late October vs. early November), changing their offset from 8 to 7 hours during transition windows.
+  2. *Fixed Offset Capture*: Capturing a fixed UTC offset at creation time (e.g. UTC-6 in summer) and applying it across winter (UTC-7) causes all summer-created winter meetings to drift by 1 hour.
 
 **How we solved it**:
-
 1. Stored all timestamps as naive local ISO strings (`YYYY-MM-DDTHH:MM:SS`) in the room's timezone, satisfying Contract C1 for the nightly reporting script.
-2. Handled weekly recurrence by adding 7 calendar days directly to the local wall-clock time (`current_start + timedelta(days=7)`), ensuring a 09:00 meeting stays at 09:00 local time year-round.
-3. Verified local times against `zoneinfo.ZoneInfo` to reject non-existent spring-forward transition times (e.g., 02:30 during Berlin spring-forward) with `422 Unprocessable Entity`.
+2. Handled weekly recurrence by adding 7 calendar days directly to the local wall-clock date (`current_start + timedelta(days=7)`), ensuring a 09:00 meeting stays at 09:00 local time year-round.
+3. Verified local times against `zoneinfo.ZoneInfo` to reject non-existent spring-forward transition times (e.g., 02:30 during Berlin spring-forward) with `422 Unprocessable Entity`, and resolved autumn fall-back folds with `fold=0`.
 
 ### 3. Recurring Booking Conflict Policy ("50% + Max 2 Conflict" Rule)
 
@@ -134,12 +135,22 @@ The brief presented an apparent contradiction: Rule R1 requires recurring bookin
 
 **How we reconciled them**:
 A series is accepted if and only if:
-
-- Conflicts $\le 2$ (Rule R2).
-- At least 50% of requested bookings succeed.
-- At least 1 booking is created.
+- Conflicts $C \le 2$ (Rule R2).
+- At least 50% of requested bookings succeed ($S \ge 0.5 \times N$).
+- At least 1 booking is created ($S \ge 1$).
 
 If more than 2 instances conflict or the success rate drops below 50%, an atomic rollback occurs returning `409 Conflict` (Rule R1).
+
+| Total $N$ | Conflicts $C$ | Created $S$ | Success Rate ($S/N$) | Status Code | Outcome / Reason |
+| :---: | :---: | :---: | :---: | :---: | :--- |
+| 1 | 0 | 1 | 100% | `201 Created` | Full series creation |
+| 1 | 1 | 0 | 0% | `409 Conflict` | 0% success (zero bookings created) |
+| 2 | 1 | 1 | 50% | `201 Created` | $C \le 2$ AND $50\% \ge 50\%$ |
+| 2 | 2 | 0 | 0% | `409 Conflict` | 0% success (all instances clash) |
+| 3 | 2 | 1 | 33.3% | `409 Conflict` | $33.3\% < 50\%$ threshold |
+| 4 | 2 | 2 | 50% | `201 Created` | $C \le 2$ AND $50\% \ge 50\%$ |
+| 6 | 2 | 4 | 66.7% | `201 Created` | $C \le 2$ AND $66.7\% \ge 50\%$ |
+| 10 | 3 | 7 | 70% | `409 Conflict` | $C = 3 > 2$ (violates max 2 conflicts) |
 
 ### 4. Series Cancellation & Historical Preservation (Solving OM-1)
 
