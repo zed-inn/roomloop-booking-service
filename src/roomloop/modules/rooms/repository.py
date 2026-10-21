@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from roomloop.config.database import DatabaseConnection
 from roomloop.modules.rooms.model import RoomModel
@@ -20,15 +21,22 @@ class RoomRepository:
             )
             return list(session.scalars(stmt).all())
 
-    def get_by_id(self, room_id: int) -> RoomModel | None:
-        """fetches room by primary key id if active"""
+    def get_by_id(
+        self, room_id: int, session: Session | None = None
+    ) -> RoomModel | None:
+        """fetches room by primary key id if active, optionally reusing an active session"""
         if not isinstance(room_id, int) or room_id <= 0:
             return None
-        with self.db.get_session() as session:
+        if session is not None:
             stmt = select(RoomModel).where(
                 RoomModel.id == room_id, RoomModel.is_active.is_(True)
             )
             return session.scalars(stmt).first()
+        with self.db.get_session() as s:
+            stmt = select(RoomModel).where(
+                RoomModel.id == room_id, RoomModel.is_active.is_(True)
+            )
+            return s.scalars(stmt).first()
 
     def create(self, room: RoomModel) -> RoomModel:
         """persists a new room record"""

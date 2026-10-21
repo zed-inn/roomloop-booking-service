@@ -21,7 +21,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
         duration_ms: float = (time.perf_counter() - start_time) * 1000.0
         status_code: int = response.status_code
 
-        # log formatted request details via app_logger with millisecond latency
         app_logger.info(
             "[HTTP] %s %s %d - %.2fms",
             method,

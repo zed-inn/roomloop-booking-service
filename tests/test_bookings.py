@@ -1,5 +1,5 @@
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from roomloop.config.database import DatabaseConnection
 from roomloop.seeding.seeder import DatabaseSeeder
@@ -55,7 +55,6 @@ def test_create_single_booking_conflict_rejection(booking_client):
     res_1 = client.post("/bookings", json=payload_1)
     assert res_1.status_code == 201
 
-    # overlapping slot: 09:30 - 10:30
     payload_overlap = {
         "room_id": 3,
         "start": "2026-11-10T09:30:00",
@@ -111,11 +110,10 @@ def test_single_booking_non_existent_room_returns_404(booking_client):
 def test_single_booking_dst_gap_rejected(booking_client):
     """verifies that booking scheduled at non-existent spring-forward local time returns 422"""
     client, _ = booking_client
-    # berlin spring-forward gap on 2027-03-28 02:30:00
     res = client.post(
         "/bookings",
         json={
-            "room_id": 3,  # berlin HQ room
+            "room_id": 3,
             "start": "2027-03-28T02:30:00",
             "end": "2027-03-28T03:30:00",
             "user": "david",
@@ -128,7 +126,7 @@ def test_recurring_booking_happy_path(booking_client):
     """verifies recurring booking creation upfront across 4 weeks with zero conflicts"""
     client, _ = booking_client
     payload = {
-        "room_id": 4,  # berlin kreuzberg
+        "room_id": 4,
         "start": "2026-11-04T14:00:00",
         "end": "2026-11-04T15:00:00",
         "user": "engineering-team",
@@ -148,7 +146,6 @@ def test_recurring_booking_happy_path(booking_client):
 def test_recurring_booking_r2_skips_up_to_two_conflicts(booking_client):
     """verifies r2 exception: 4-week series with 2 pre-existing clashes skips them and creates remaining 2 (50%)"""
     client, _ = booking_client
-    # pre-book week 1 (2026-11-04) and week 3 (2026-11-18)
     client.post(
         "/bookings",
         json={
@@ -168,7 +165,6 @@ def test_recurring_booking_r2_skips_up_to_two_conflicts(booking_client):
         },
     )
 
-    # request 4-week series (Nov 4, 11, 18, 25)
     res = client.post(
         "/bookings/recurring",
         json={
@@ -193,7 +189,6 @@ def test_recurring_booking_r2_skips_up_to_two_conflicts(booking_client):
 def test_recurring_booking_r1_rollback_when_zero_slots_created(booking_client):
     """verifies r1 all-or-nothing rollback when 2-instance series has 2 conflicts (0% created)"""
     client, _ = booking_client
-    # pre-book week 1 and week 2
     client.post(
         "/bookings",
         json={
@@ -213,7 +208,6 @@ def test_recurring_booking_r1_rollback_when_zero_slots_created(booking_client):
         },
     )
 
-    # request 2-week series: both conflict
     res = client.post(
         "/bookings/recurring",
         json={
@@ -233,19 +227,17 @@ def test_recurring_booking_r1_rollback_when_exceeding_two_conflicts(
 ):
     """verifies r1 all-or-nothing rollback when conflicts exceed 2, even if total created >= 50%"""
     client, _ = booking_client
-    # pre-book 3 dates: Nov 4, Nov 11, Nov 18
     for d in ["2026-11-04", "2026-11-11", "2026-11-18"]:
         client.post(
             "/bookings",
             json={
-                "room_id": 9,  # denver lodo
+                "room_id": 9,
                 "start": f"{d}T10:00:00",
                 "end": f"{d}T11:00:00",
                 "user": "blocker",
             },
         )
 
-    # request 10-week series (Nov 4 to Jan 6) -> 3 conflicts exceeds max 2
     res = client.post(
         "/bookings/recurring",
         json={

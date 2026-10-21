@@ -81,3 +81,24 @@ class RecurringBookingResponse(BaseModel):
     skipped_count: int
     created: list[BookingResponse]
     skipped: list[SkippedInstance]
+
+
+class CancelBookingResponse(BaseModel):
+    """response dto confirming single booking cancellation"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: int
+    status: Literal["cancelled"]
+    cancelled_at_utc: str
+
+
+class CancelSeriesResponse(BaseModel):
+    """response dto confirming recurring series future cancellation"""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    series_id: int
+    cancelled_count: int
+    kept_count: int
+    cancelled_at_utc: str

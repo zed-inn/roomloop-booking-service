@@ -43,9 +43,5 @@ class AuditLogRepository:
                 "[Audit Repository] DatabaseConnection is required to query logs"
             )
         with self.db.get_session() as session:
-            stmt = (
-                select(AuditLogModel)
-                .order_by(AuditLogModel.id.desc())
-                .limit(limit)
-            )
+            stmt = select(AuditLogModel).order_by(AuditLogModel.id.desc()).limit(limit)
             return list(session.scalars(stmt).all())

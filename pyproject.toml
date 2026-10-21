@@ -23,4 +23,5 @@ packages = ["src/roomloop"]
 dev = [
     "httpx2>=2.15.1",
     "pytest>=9.1.1",
+    "ruff>=0.17.1",
 ]

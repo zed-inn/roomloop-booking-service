@@ -5,7 +5,6 @@ from roomloop.modules.rooms.model import RoomModel
 from roomloop.shared.models.base import Base
 from roomloop.shared.services.logger import app_logger
 
-# prototype rooms strictly matching take-home contract c2 and multi-office requirements
 PROTOTYPE_ROOMS: list[dict[str, object]] = [
     {"id": 3, "name": "Neukölln", "capacity": 8, "timezone": "Europe/Berlin"},
     {"id": 4, "name": "Kreuzberg", "capacity": 12, "timezone": "Europe/Berlin"},
@@ -47,7 +46,6 @@ def run_seed() -> None:
     db = DatabaseConnection()
     db.connect()
     try:
-        # ensure tables exist before seeding
         Base.metadata.create_all(bind=db.engine)
         seeder = DatabaseSeeder(db)
         seeder.seed_all()
@@ -57,4 +55,3 @@ def run_seed() -> None:
 
 if __name__ == "__main__":
     run_seed()
-

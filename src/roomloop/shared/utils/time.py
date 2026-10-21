@@ -1,5 +1,5 @@
-from datetime import date, datetime, timedelta
 import re
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 ISO_NAIVE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
@@ -7,8 +7,6 @@ ISO_NAIVE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
 
 class TimeValidationError(Exception):
     """raised when a datetime fails format, ordering, or timezone validity checks"""
-
-    pass
 
 
 def parse_naive_iso(iso_str: str) -> datetime:
@@ -48,7 +46,6 @@ def validate_local_wall_time(dt: datetime, tz_name: str) -> None:
     """validates that a local wall-clock time exists and does not fall in a dst spring-forward gap"""
     tz = get_zone_info(tz_name)
 
-    # fold 0 is the default resolution; in a spring-forward gap, converting to utc and back shifts the wall time
     localized_0 = dt.replace(tzinfo=tz, fold=0)
     utc_0 = localized_0.astimezone(ZoneInfo("UTC"))
     back_0 = utc_0.astimezone(tz).replace(tzinfo=None)
@@ -72,14 +69,10 @@ def generate_weekly_occurrences(
         raise TypeError("repeat_until must be a date instance")
 
     if end_dt <= start_dt:
-        raise TimeValidationError(
-            "end datetime must be strictly after start datetime"
-        )
+        raise TimeValidationError("end datetime must be strictly after start datetime")
 
     if repeat_until < start_dt.date():
-        raise TimeValidationError(
-            "repeat_until date cannot be earlier than start date"
-        )
+        raise TimeValidationError("repeat_until date cannot be earlier than start date")
 
     duration: timedelta = end_dt - start_dt
     if duration >= timedelta(days=7):
@@ -90,11 +83,9 @@ def generate_weekly_occurrences(
 
     while current_start.date() <= repeat_until:
         current_end = current_start + duration
-        # validate that occurrence wall times exist in the room timezone
         validate_local_wall_time(current_start, tz_name)
         validate_local_wall_time(current_end, tz_name)
         occurrences.append((current_start, current_end))
-        # weekly repetition by adding exactly 7 calendar days to naive datetime
         current_start += timedelta(days=7)
 
     return occurrences

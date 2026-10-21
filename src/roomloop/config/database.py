@@ -81,7 +81,6 @@ class DatabaseConnection:
                 dbapi_connection: sqlite3.Connection,
                 connection_record: ConnectionPoolEntry,
             ) -> None:
-                # disable pysqlite default transaction control so sqlalchemy manages it
                 dbapi_connection.isolation_level = None
                 cursor: sqlite3.Cursor = dbapi_connection.cursor()
                 try:
@@ -97,7 +96,6 @@ class DatabaseConnection:
 
             @event.listens_for(engine, "begin")
             def _do_begin_immediate(conn: Connection) -> None:
-                # eager write lock to serialize concurrent bookings and prevent race conditions
                 conn.exec_driver_sql("BEGIN IMMEDIATE")
 
     def check_connection(self) -> bool:
@@ -110,7 +108,7 @@ class DatabaseConnection:
                 if not isinstance(raw_result, int):
                     return False
                 return raw_result == 1
-        except Exception as err:
+        except (sqlite3.Error, OSError, Exception) as err:  # noqa: BLE001
             app_logger.error("[Database Connection] Health check ping failed: %s", err)
             return False
 

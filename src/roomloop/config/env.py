@@ -43,7 +43,7 @@ def format_validation_error(err: ValidationError) -> str:
         field_path = " -> ".join(str(elem) for elem in error.get("loc"))
         message = error.get("msg")
         input_val = error.get("input")
-        lines.append(f" - {field_path}: {message} (recieved: {input_val!r})")
+        lines.append(f" - {field_path}: {message} (received: {input_val!r})")
     return "\n".join(lines)
 
 

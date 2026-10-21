@@ -1,6 +1,7 @@
 import json
-from fastapi.testclient import TestClient
+
 import pytest
+from fastapi.testclient import TestClient
 
 from roomloop.config.database import DatabaseConnection
 from roomloop.modules.audit.repository import AuditLogRepository
@@ -56,7 +57,6 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
     """verifies that series creation and series rollback events are persisted in audit_logs"""
     client, db = audit_test_setup
 
-    # 1. successful series creation
     client.post(
         "/bookings/recurring",
         json={
@@ -68,7 +68,6 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
         },
     )
 
-    # 2. conflicting series that triggers rollback (3 clashes > 2)
     client.post(
         "/bookings/recurring",
         json={
@@ -80,7 +79,6 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
         },
     )
 
-    # 3. recurring series with 1 conflict skipped per r2
     client.post(
         "/bookings",
         json={
@@ -97,7 +95,7 @@ def test_audit_logs_record_series_creation_and_rollback(audit_test_setup):
             "start": "2026-11-26T14:00:00",
             "end": "2026-11-26T15:00:00",
             "user": "skip-user",
-            "repeat_until": "2026-12-17",  # 4 weeks: Nov 26 (clash), Dec 3, Dec 10, Dec 17 (3 created)
+            "repeat_until": "2026-12-17",
         },
     )
 

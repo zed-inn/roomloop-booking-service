@@ -13,8 +13,6 @@ class RoomModel(Base):
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     capacity: Mapped[int] = mapped_column(Integer, nullable=False)
     timezone: Mapped[str] = mapped_column(String(50), nullable=False)
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     __table_args__ = (CheckConstraint("capacity > 0", name="chk_room_capacity"),)

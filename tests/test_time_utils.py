@@ -1,4 +1,5 @@
 from datetime import date, datetime
+
 import pytest
 
 from roomloop.shared.utils.time import (
@@ -29,11 +30,11 @@ def test_parse_and_format_naive_iso():
 def test_parse_naive_iso_rejects_malformed_formats():
     """verifies that invalid timestamps or timestamps with offsets/microseconds are rejected"""
     invalid_samples = [
-        "2026-10-21",  # missing time
-        "2026-10-21 09:00:00",  # space separator instead of T
-        "2026-10-21T09:00",  # missing seconds
-        "2026-10-21T09:00:00.000Z",  # includes microseconds and UTC Z
-        "2026-10-21T09:00:00+02:00",  # includes timezone offset
+        "2026-10-21",
+        "2026-10-21 09:00:00",
+        "2026-10-21T09:00",
+        "2026-10-21T09:00:00.000Z",
+        "2026-10-21T09:00:00+02:00",
         "invalid-date",
         "",
     ]
@@ -44,20 +45,17 @@ def test_parse_naive_iso_rejects_malformed_formats():
 
 def test_validate_local_wall_time_catches_spring_forward_gap():
     """verifies that non-existent local wall times in spring-forward dst gaps are rejected"""
-    # berlin spring forward on 2027-03-28 jumps from 02:00 to 03:00 (02:30 does not exist)
     gap_time = datetime(2027, 3, 28, 2, 30, 0)
     with pytest.raises(TimeValidationError) as exc_info:
         validate_local_wall_time(gap_time, "Europe/Berlin")
     assert "does not exist in timezone 'Europe/Berlin'" in str(exc_info.value)
 
-    # valid normal time succeeds
     valid_time = datetime(2027, 3, 28, 9, 0, 0)
     validate_local_wall_time(valid_time, "Europe/Berlin")
 
 
 def test_validate_local_wall_time_accepts_fall_back_fold():
     """verifies that ambiguous times during fall-back transitions are valid"""
-    # berlin fall-back on 2026-10-25 repeats 02:00-03:00 (02:30 exists twice, fold=0 resolves)
     fold_time = datetime(2026, 10, 25, 2, 30, 0)
     validate_local_wall_time(fold_time, "Europe/Berlin")
 
@@ -75,7 +73,6 @@ def test_denver_dst_transition_preserves_wall_clock_time():
         tz_name="America/Denver",
     )
 
-    # occurrences across 5 weeks: Oct 21, Oct 28, Nov 4 (post-DST), Nov 11, Nov 18
     assert len(occurrences) == 5
     for occ_start, occ_end in occurrences:
         assert occ_start.hour == 9
@@ -109,7 +106,6 @@ def test_berlin_dst_transition_preserves_wall_clock_time():
         tz_name="Europe/Berlin",
     )
 
-    # occurrences across 5 weeks: Oct 14, Oct 21, Oct 28 (post-DST), Nov 4, Nov 11
     assert len(occurrences) == 5
     for occ_start, occ_end in occurrences:
         assert occ_start.hour == 9

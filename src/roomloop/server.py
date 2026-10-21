@@ -74,9 +74,7 @@ class Server:
         if not self.database.check_connection():
             raise RuntimeError("[Server] Database health check failed during boot")
 
-        # ensure orm model tables exist in database
         Base.metadata.create_all(bind=self.database.engine)
-        # execute initial seeding for prototype rooms
         seeder = DatabaseSeeder(self.database)
         seeder.seed_all()
 
@@ -105,7 +103,7 @@ class Server:
                 app=self.fastapi.app,
                 host=self.listener_opts.host,
                 port=self.listener_opts.port,
-                log_config=None,  # use configured app_logger
+                log_config=None,
             )
             self._uvicorn_server = uvicorn.Server(config)
             app_logger.info(
@@ -114,14 +112,13 @@ class Server:
                 self.listener_opts.port,
             )
             await self._uvicorn_server.serve()
-        except Exception as err:
+        except Exception as err:  # noqa: BLE001
             app_logger.error("[Server] Boot failure: %s", err)
             sys.exit(1)
         finally:
             await self.shutdown()
 
 
-# export default server and asgi application instance
 server = Server()
 app = server.fastapi.app
 
