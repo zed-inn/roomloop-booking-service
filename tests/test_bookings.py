@@ -250,3 +250,92 @@ def test_recurring_booking_r1_rollback_when_exceeding_two_conflicts(
     )
     assert res.status_code == 409
     assert "3 conflicts exceed threshold" in res.json()["detail"]
+
+
+def test_single_booking_multiday_under_7_days_succeeds(booking_client):
+    """verifies single booking lasting multiple days (under 7 days) succeeds with 201"""
+    client, _ = booking_client
+    res = client.post(
+        "/bookings",
+        json={
+            "room_id": 9,
+            "start": "2026-11-05T00:00:00",
+            "end": "2026-11-07T00:00:00",
+            "user": "workshop-team",
+        },
+    )
+    assert res.status_code == 201
+    assert res.json()["start"] == "2026-11-05T00:00:00"
+    assert res.json()["end"] == "2026-11-07T00:00:00"
+
+
+def test_single_booking_exceeding_7_days_rejected(booking_client):
+    """verifies single booking duration exceeding 7 days is rejected with 422"""
+    client, _ = booking_client
+    res = client.post(
+        "/bookings",
+        json={
+            "room_id": 9,
+            "start": "2026-11-05T00:00:00",
+            "end": "2026-11-13T00:00:00",
+            "user": "too-long",
+        },
+    )
+    assert res.status_code == 422
+    assert "single meeting duration must be less than 7 days" in res.json()["detail"]
+
+
+def test_recurring_booking_multi_day_and_invalid_repeat_until_rejected(booking_client):
+    """verifies multi-day recurring booking with repeat_until < end is rejected with 422"""
+    client, _ = booking_client
+    payload = {
+        "room_id": 9,
+        "start": "2026-11-05T00:00:00",
+        "end": "2026-11-07T00:00:00",
+        "user": "user2",
+        "repeat_until": "2026-11-06T00:00:00",
+    }
+    res = client.post("/bookings/recurring", json=payload)
+    assert res.status_code == 422
+    assert (
+        "repeat_until date cannot be earlier than meeting end date"
+        in res.json()["detail"]
+    )
+
+
+def test_recurring_booking_multiday_succeeds_when_repeat_until_valid(booking_client):
+    """verifies multi-day recurring booking succeeds when repeat_until >= end_dt.date()"""
+    client, _ = booking_client
+    payload = {
+        "room_id": 9,
+        "start": "2026-11-05T00:00:00",
+        "end": "2026-11-07T00:00:00",
+        "user": "hackathon-series",
+        "repeat_until": "2026-11-14",
+    }
+    res = client.post("/bookings/recurring", json=payload)
+    assert res.status_code == 201
+    data = res.json()
+    assert len(data["created"]) == 2
+    assert data["created"][0]["start"] == "2026-11-05T00:00:00"
+    assert data["created"][0]["end"] == "2026-11-07T00:00:00"
+    assert data["created"][1]["start"] == "2026-11-12T00:00:00"
+    assert data["created"][1]["end"] == "2026-11-14T00:00:00"
+
+
+def test_recurring_booking_repeat_until_earlier_than_end_date_rejected(booking_client):
+    """verifies recurring booking where repeat_until is before the first instance end date is rejected with 422"""
+    client, _ = booking_client
+    payload = {
+        "room_id": 9,
+        "start": "2026-11-05T23:00:00",
+        "end": "2026-11-06T01:00:00",
+        "user": "late-shift",
+        "repeat_until": "2026-11-05",
+    }
+    res = client.post("/bookings/recurring", json=payload)
+    assert res.status_code == 422
+    assert (
+        "repeat_until date cannot be earlier than meeting end date"
+        in res.json()["detail"]
+    )

@@ -74,6 +74,11 @@ def generate_weekly_occurrences(
     if repeat_until < start_dt.date():
         raise TimeValidationError("repeat_until date cannot be earlier than start date")
 
+    if repeat_until < end_dt.date():
+        raise TimeValidationError(
+            "repeat_until date cannot be earlier than meeting end date"
+        )
+
     duration: timedelta = end_dt - start_dt
     if duration >= timedelta(days=7):
         raise TimeValidationError("single meeting duration must be less than 7 days")
@@ -83,6 +88,8 @@ def generate_weekly_occurrences(
 
     while current_start.date() <= repeat_until:
         current_end = current_start + duration
+        if current_end.date() > repeat_until:
+            break
         validate_local_wall_time(current_start, tz_name)
         validate_local_wall_time(current_end, tz_name)
         occurrences.append((current_start, current_end))

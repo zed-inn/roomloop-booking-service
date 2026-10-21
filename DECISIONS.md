@@ -38,9 +38,9 @@ This document records the architectural decisions, trade-offs, Product Manager q
    - _Problem_: Diagnosing recurring conflicts, rejected series, and cancellations requires verifiable history.
    - _Decision_: Implemented real-time structured logging via `RoomLoop` logger alongside an immutable SQLite `audit_logs` table recording all state transitions (`BOOKING_CREATED`, `SERIES_CREATED`, `CONFLICT_SKIPPED`, `SERIES_ROLLED_BACK`, `BOOKING_CANCELLED`, `SERIES_CANCELLED`).
 
-9. **52-Week Maximum Recurrence Horizon**:
-   - _Problem_: The brief did not specify an upper bound on `repeat_until`, risking denial-of-service via series requests spanning decades.
-   - _Decision_: Enforced a 52-week (1 year) maximum limit from `start`, rejecting larger horizons with `422 Unprocessable Entity`.
+9. **Meeting Duration Bounds & Slot Granularity**:
+   - _Problem_: The brief was silent on whether meetings require a minimum duration (e.g., 30 minutes), clock-boundary alignment (e.g., 15-minute grid snapping), or an upper bound on single meeting duration and recurrence horizon.
+   - _Decision_: We enforce `start < end`, single meeting duration `< 7 days` (allowing multi-day workshops and hackathons while preventing an instance from self-overlapping with subsequent weekly occurrences), `repeat_until >= end_dt.date()`, alongside a 52-week maximum series horizon. We deliberately avoided hardcoding an unmandated 30-minute minimum at the domain layer, allowing flexibility for quick 15-minute syncs while raising slot quantization to the PM.
 
 10. **REST API Chosen over CLI Interface**:
     - _Problem_: The brief allowed building either a REST API or CLI application and required a brief justification.
@@ -53,22 +53,25 @@ This document records the architectural decisions, trade-offs, Product Manager q
 1. **Room Inventory vs. Bookable Catalog (The R5/C2 Gap)**:
    - Does `GET /rooms` reflect the entire company facility inventory, or only currently active, bookable spaces (explaining why IDs 1, 2, 5..8 are missing)? Should we introduce an administrative API for facilities to mark rooms offline for maintenance?
 
-2. **Nightly Reporting Timezone Expectations**:
+2. **Minimum Meeting Duration & Slot Granularity**:
+   - Currently, the service allows any positive meeting duration where `start < end` under 7 days. Does company policy require enforcing a minimum meeting duration (e.g., 30 minutes), a maximum cap on continuous room occupancy (e.g., 24 hours), and snapping bookings to standard 15- or 30-minute clock boundaries to prevent fragmented calendar schedules?
+
+3. **Nightly Reporting Timezone Expectations**:
    - Contract C1 specifies naive local ISO timestamps. Does the downstream reporting job expect timestamps in each room's local timezone, or normalized to headquarters time (Berlin)?
 
-3. **Recurrence Frequency Flexibility**:
+4. **Recurrence Frequency Flexibility**:
    - Currently, recurrence is strictly weekly (every 7 calendar days). Do users require bi-weekly, monthly, or custom multi-day schedules (e.g., every Tuesday and Thursday) in the next release?
 
-4. **In-Progress Meeting Cancellation Behavior**:
+5. **In-Progress Meeting Cancellation Behavior**:
    - If an office manager cancels a recurring series while an instance is currently underway, should the ongoing meeting be terminated immediately or preserved until completion (as currently implemented)?
 
-5. **Series Conflict Policy Customization**:
+6. **Series Conflict Policy Customization**:
    - Is the "50% + max 2 conflicts" rule appropriate across all room tiers, or should executive/boardroom spaces require a strict 100% all-or-nothing policy?
 
-6. **Data Retention & Soft-Deletion Lifecycle**:
+7. **Data Retention & Soft-Deletion Lifecycle**:
    - How long should cancelled bookings and immutable audit records be retained in SQLite before archival or purging under GDPR and corporate data compliance policies?
 
-7. **Series Booking Max Horizon**:
+8. **Series Booking Max Horizon**:
    - Is the 52-week recurrence cap aligned with company calendar policies, or should it be configurable per office location?
 
 ---
@@ -100,6 +103,10 @@ This document records the architectural decisions, trade-offs, Product Manager q
 7. **Correction: Missing Spring-Forward DST Gap Validation**:
    - _What AI Got Wrong_: AI initially performed naive date arithmetic that allowed non-existent local times (e.g. 02:30 during Berlin spring-forward).
    - _Correction_: Implemented `validate_local_wall_time` using `zoneinfo` fold comparisons to reject non-existent times with 422.
+
+8. **Correction: Recurrence End-Date Cutoff vs. Fabricated 24h Limit**:
+   - _What AI Got Wrong_: When evaluating an anomalous request where a multi-day meeting ended after the recurrence cutoff (`start=2026-11-05T00:00:00`, `end=2026-11-07T00:00:00`, `repeat_until=2026-11-06`), AI hallucinated an unmandated 24-hour single meeting restriction, conflating legitimate multi-day bookings (< 7 days) with boundary validation flaws. The actual root cause was that `generate_weekly_occurrences` only verified `repeat_until < start_dt.date()` instead of `repeat_until < end_dt.date()`, and looped `while current_start.date() <= repeat_until` without checking whether `current_end.date() <= repeat_until`, improperly permitting an occurrence to end past the series cutoff date.
+   - _Correction_: Preserved multi-day booking support (< 7 days) without arbitrary 24-hour limits, enforced `repeat_until >= end_dt.date()`, and added a guard in recurrence generation to halt if an instance concludes past the `repeat_until` cutoff date.
 
 ---
 

@@ -137,12 +137,63 @@ def test_generate_weekly_occurrences_boundary_validations():
             tz_name="Europe/Berlin",
         )
 
+    # repeat_until earlier than meeting end date
+    overnight_start = datetime(2026, 10, 21, 23, 0, 0)
+    overnight_end = datetime(2026, 10, 22, 1, 0, 0)
+    with pytest.raises(TimeValidationError) as exc_info:
+        generate_weekly_occurrences(
+            start_dt=overnight_start,
+            end_dt=overnight_end,
+            repeat_until=date(2026, 10, 21),
+            tz_name="Europe/Berlin",
+        )
+    assert "earlier than meeting end date" in str(exc_info.value)
+
     # duration exceeds 7 days
     long_end = datetime(2026, 10, 29, 9, 0, 0)
-    with pytest.raises(TimeValidationError):
+    with pytest.raises(TimeValidationError) as exc_info_7d:
         generate_weekly_occurrences(
             start_dt=valid_start,
             end_dt=long_end,
             repeat_until=date(2026, 11, 21),
             tz_name="Europe/Berlin",
         )
+    assert "must be less than 7 days" in str(exc_info_7d.value)
+
+
+def test_generate_weekly_occurrences_allows_multiday_under_7_days():
+    """verifies that multi-day meetings (e.g. 48 hours) are permitted when repeat_until >= end_dt.date()"""
+    start_dt = datetime(2026, 11, 5, 0, 0, 0)
+    end_dt = datetime(2026, 11, 7, 0, 0, 0)
+    repeat_until = date(2026, 11, 14)
+
+    occurrences = generate_weekly_occurrences(
+        start_dt=start_dt,
+        end_dt=end_dt,
+        repeat_until=repeat_until,
+        tz_name="Europe/Berlin",
+    )
+    assert len(occurrences) == 2
+    assert occurrences[0] == (start_dt, end_dt)
+    assert occurrences[1] == (
+        datetime(2026, 11, 12, 0, 0, 0),
+        datetime(2026, 11, 14, 0, 0, 0),
+    )
+
+
+def test_generate_weekly_occurrences_truncates_when_instance_ends_after_cutoff():
+    """verifies that an occurrence is excluded if its end date exceeds repeat_until"""
+    start_dt = datetime(2026, 10, 21, 23, 0, 0)
+    end_dt = datetime(2026, 10, 22, 1, 0, 0)
+    # repeat_until allows the first instance (ending 2026-10-22), but not the second (ending 2026-10-29)
+    repeat_until = date(2026, 10, 28)
+
+    occurrences = generate_weekly_occurrences(
+        start_dt=start_dt,
+        end_dt=end_dt,
+        repeat_until=repeat_until,
+        tz_name="Europe/Berlin",
+    )
+    assert len(occurrences) == 1
+    assert occurrences[0][0] == start_dt
+    assert occurrences[0][1] == end_dt
