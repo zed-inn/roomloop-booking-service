@@ -31,7 +31,23 @@ cd roomloop-booking-service
 uv sync
 ```
 
-### 2. Seed Database
+### 2. Environment Configuration
+
+Copy the provided [`.env.example`](file:///.env.example) template to `.env` (or `config/.env`):
+
+```bash
+cp .env.example .env
+```
+
+| Variable             | Default       | Allowed Values / Description                               |
+| -------------------- | ------------- | ---------------------------------------------------------- |
+| `HOST`               | `localhost`   | Network interface to bind (`0.0.0.0` or `localhost`)        |
+| `PORT`               | `8000`        | HTTP port number (1 - 65535)                               |
+| `ENVIRONMENT`        | `development` | `development`, `production`, or `test`                     |
+| `LOG_LEVEL`          | `INFO`        | `DEBUG`, `INFO`, `WARNING`, or `ERROR`                     |
+| `DATABASE_FILE_PATH` | `database.db` | Relative or absolute SQLite database file location         |
+
+### 3. Seed Database
 
 Initialize the database schema and populate the prototype rooms (`[3, 4, 9, 17]`):
 
@@ -39,10 +55,16 @@ Initialize the database schema and populate the prototype rooms (`[3, 4, 9, 17]`
 make seed
 ```
 
+For stress testing and load benchmarks, you can also run a rich seed that populates existing recurring series and single bookings across all rooms:
+
+```bash
+make seed-rich
+```
+
 > [!IMPORTANT]
 > Always run `make seed` before starting the server. Seeding is decoupled from the server startup sequence so that deployments never inadvertently mutate existing data.
 
-### 3. Start the Server
+### 4. Start the Server
 
 Run the development server on `http://localhost:8000`:
 
@@ -381,16 +403,22 @@ booking_service = BookingService(booking_repo=booking_repo, room_repo=room_repo)
 
 | Command             | Action                                                        |
 | ------------------- | ------------------------------------------------------------- |
-| `make dev`          | Start development server on `localhost:8000`                  |
-| `make start`        | Start production server (`ENVIRONMENT=production`)             |
-| `make seed`         | Idempotently seed prototype rooms into SQLite                 |
-| `make test`         | Run complete pytest test suite (`ENVIRONMENT=test`)           |
-| `make test-v`       | Run pytest suite with verbose output                          |
-| `make lint`         | Run Ruff linter checks across `src/` and `tests/`             |
-| `make format`       | Auto-format codebase using Ruff                               |
-| `make format-check` | Check code formatting compliance                              |
-| `make verify`       | Run full quality gate: linter, format check, and all 94 tests |
-| `make clean`        | Clean pycache, pytest caches, and temporary test databases    |
+| `make dev`           | Start development server on `localhost:8000`                  |
+| `make start`         | Start production server (`ENVIRONMENT=production`)             |
+| `make seed`          | Idempotently seed prototype rooms into SQLite                 |
+| `make seed-rich`     | Seed rooms plus rich sample recurring & single bookings       |
+| `make test`          | Run complete pytest test suite (`ENVIRONMENT=test`)           |
+| `make test-v`        | Run pytest suite with verbose output                          |
+| `make lint`          | Run Ruff linter checks across `src/` and `tests/`             |
+| `make format`        | Auto-format codebase using Ruff                               |
+| `make format-check`  | Check code formatting compliance                              |
+| `make verify`        | Run full quality gate: linter, format check, and all 94 tests |
+| `make load-generate` | Generate 5,000 diverse payload templates for k6               |
+| `make load-10k`      | Run 10k request k6 benchmark (30 VUs, smoke & latency check)  |
+| `make load-100k`     | Run 100k request k6 stress benchmark (100 VUs, high concurrency)|
+| `make load-1m`       | Run 1M request k6 high-volume benchmark (200 VUs)             |
+| `make load-py-10k`   | Run 10k request pure Python async benchmark (no k6 required)  |
+| `make clean`         | Clean pycache, pytest caches, and temporary test databases    |
 
 ---
 
@@ -420,3 +448,117 @@ ENVIRONMENT=test uv run pytest
 - **Strict API Versioning**: Confirms `/api/v1/bookings` is enforced while unversioned `GET /rooms` is isolated for legacy dashboard compatibility.
 - **High Concurrency Serialization**: 8 simultaneous worker threads attempting to book the exact same slot result in exactly 1 success and 7 rejections without database corruption.
 - **Immutable Audit Trail**: All 6 lifecycle events are verified in the `audit_logs` table.
+
+---
+
+## Performance & Load Testing (k6 & Python Async Dual-Mode)
+
+The repository provides a dual-mode, repeatable load testing suite that seamlessly adapts to the host environment:
+1. **k6 Benchmark Runner** ([`tests/load/k6_load_test.js`](file:///tests/load/k6_load_test.js)): High-performance, low-overhead Go-based runner with an embedded ECMAScript runtime (*zero Node.js or npm dependencies required*).
+2. **Pure Python Async Runner** ([`tests/load/python_load_test.py`](file:///tests/load/python_load_test.py)): Built on Python 3.12, `asyncio`, and `httpx2` for environments without `k6` installed.
+
+Both runners consume the identical 5,000-payload bank ([`tests/load/payloads.json`](file:///tests/load/payloads.json)), evaluate dynamic placeholders at runtime, enforce contracts, and generate the exact same clean Markdown metrics report at [`tests/load/LOAD_TEST_RESULTS.md`](file:///tests/load/LOAD_TEST_RESULTS.md).
+
+### 1. Seamless Runtime Detection & Auto-Fallback
+
+Executing `make load-10k` automatically inspects the host system:
+- **If `k6` is installed**: Executes `tests/load/k6_load_test.js` directly.
+- **If `k6` is NOT installed**: Automatically and seamlessly falls back to the pure Python async runner (`python tests/load/python_load_test.py`) without requiring any manual installation.
+
+To inspect how to install `k6` on any OS (Linux standalone binary, Ubuntu/Debian apt, macOS Homebrew, Windows winget, or Docker), simply run:
+```bash
+make k6-info
+```
+
+---
+
+### 2. The 5,000 Request Payload Bank
+
+To test every corner of the system (reads, creations, overlaps, validation errors, and deletions), the suite uses a bank of 5,000 pre-generated request templates (`tests/load/payloads.json`), generated via `make load-generate` (or [`tests/load/generate_payloads.py`](file:///tests/load/generate_payloads.py)).
+
+#### Dynamic Placeholder Evaluators (`##...`)
+Rather than sending static payloads, each template uses creative placeholder tokens that k6 dynamically resolves at runtime per virtual user:
+
+| Placeholder Token | Resolved At Runtime To | Purpose / Test Coverage |
+| ----------------- | ---------------------- | ----------------------- |
+| `##valid_room_id` | `3`, `4`, `9`, or `17` | Matches seeded database room primary keys |
+| `##invalid_room_id` | `999`, `1001`, `4040`, `777` | Verifies `404 Not Found` handling |
+| `##random_timestamp_start_4yr` | `YYYY-MM-DDTHH:00:00` | Random date across a **4-year range (2025–2028)** at office business hours |
+| `##random_timestamp_end_4yr` | `YYYY-MM-DDTHH:00:00` | Correctly offset 1 to 2 hours after start date |
+| `##random_repeat_until_4yr` | `YYYY-MM-DD` | Multi-week recurrence end date 2 to 9 weeks out |
+| `##spring_forward_gap_time` | `2027-03-28T02:30:00` | Non-existent local wall-clock time in Berlin; verifies `422 Unprocessable Entity` |
+| `##inverted_start` / `##inverted_end` | `16:00:00` / `14:00:00` | Start time later than end time; verifies `422 Unprocessable Entity` |
+| `##malformed_timestamp` | `2027-99-99T99:99:99` | Non-ISO datetime string; verifies `422` schema rejection |
+| `##extra_field_value` | Extra forbidden property | Verifies Pydantic `extra="forbid"` returns `422` |
+| `##random_user` | Real corporate names | Realistic user attribution across requests |
+| `##random_series_id` | Random integer series ID | Verifies series cancellation (`200` or `404`) |
+| `##random_booking_id` | Random integer booking ID | Verifies single cancellation (`200`, `400` if series, or `404`) |
+| `##request_id` | `k6-trace-<vu>-<iter>-<timestamp>` | Distributed tracing correlation via `X-Request-ID` |
+
+---
+
+### 3. Running the Benchmark Tiers
+
+```bash
+# Optional: Seed the database with sample bookings and series for realistic overlap/delete traffic
+make seed-rich
+
+# Start server in one terminal
+make start
+# (or with multi-worker scaling: uv run uvicorn roomloop.server:app --port 8000 --workers 4)
+
+# In a second terminal, execute the desired tier:
+# Tier 1: 10,000 requests (30 VUs, ~40 seconds)
+make load-10k
+
+# Tier 2: 100,000 requests (100 VUs, ~5 minutes)
+make load-100k
+
+# Tier 3: 1,000,000 requests (200 VUs, high-volume benchmark)
+make load-1m
+```
+
+> **Targeting a custom port or host**:
+> ```bash
+> TARGET_URL=http://localhost:8095 make load-10k
+> ```
+
+---
+
+### 4. Status Code Breakdown & Automatic Report Generation
+
+At completion, k6 displays an ASCII summary table in stdout and **automatically exports a comprehensive markdown report to [`tests/load/LOAD_TEST_RESULTS.md`](file:///tests/load/LOAD_TEST_RESULTS.md)** detailing exact counts, percentages, and latency percentiles:
+
+```text
+================================================================================
+                    ROOMLOOP K6 LOAD TEST PERFORMANCE SUMMARY                   
+================================================================================
+  Total Requests Executed : 10000
+  Contract Compliance Rate: 100.00%
+--------------------------------------------------------------------------------
+  HTTP STATUS CODE BREAKDOWN & PERCENTAGES:
+  • 2xx Success (200/201/204)    :  73.39%  (7,339 reqs)
+  • 409 Conflict (Overlap Policy):  15.55%  (1,555 reqs)
+  • 422 Validation / DST Gaps    :   4.74%  (  474 reqs)
+  • 404 Not Found (Invalid IDs)  :   5.92%  (  592 reqs)
+  • 400 Bad Request              :   0.40%  (   40 reqs)
+  • 5xx Internal Server Errors   :   0.00%  (    0 reqs)  <-- ZERO SERVER ERRORS
+--------------------------------------------------------------------------------
+  LATENCY METRICS:
+  • Average Latency : 95.39 ms
+  • Median Latency  : 77.32 ms
+  • P(95) Latency   : 256.88 ms
+================================================================================
+```
+
+View the generated report artifact at: [`tests/load/LOAD_TEST_RESULTS.md`](file:///tests/load/LOAD_TEST_RESULTS.md).
+
+### 5. High-Volume Concurrency Tuning
+To support sustained throughput without database lock contention, RoomLoop configures SQLite with:
+- `PRAGMA journal_mode = WAL`: Readers never block writers and writers never block readers.
+- `PRAGMA synchronous = NORMAL`: Eliminates fsync disk stalls on intermediate write transactions while preserving durability.
+- `PRAGMA busy_timeout = 5000`: Allows worker threads to retry lock acquisition for up to 5 seconds during burst writes instead of throwing immediate lock errors.
+- `PRAGMA cache_size = -64000`: Allocates a 64 MB in-memory page cache for high-speed indexing.
+
+Under load, all requests are guaranteed **0.00% 500 Internal Server Errors**, with conflicting slots cleanly returning `409 Conflict` and accepted bookings returning `201 Created`.
+
