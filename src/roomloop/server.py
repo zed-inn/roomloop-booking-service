@@ -10,6 +10,8 @@ from roomloop.api.v1.router import register_api_v1_routes
 from roomloop.config.database import DatabaseConnection
 from roomloop.config.env import env
 from roomloop.config.fastapi import FastApiApp
+from roomloop.modules.audit.model import AuditLogModel  # noqa: F401
+from roomloop.modules.bookings.model import BookingModel, SeriesModel  # noqa: F401
 from roomloop.modules.rooms.model import RoomModel  # noqa: F401
 from roomloop.seeding.seeder import DatabaseSeeder
 from roomloop.shared.models.base import Base

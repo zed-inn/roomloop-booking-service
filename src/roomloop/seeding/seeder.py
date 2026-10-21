@@ -1,4 +1,6 @@
 from roomloop.config.database import DatabaseConnection
+from roomloop.modules.audit.model import AuditLogModel  # noqa: F401
+from roomloop.modules.bookings.model import BookingModel, SeriesModel  # noqa: F401
 from roomloop.modules.rooms.model import RoomModel
 from roomloop.shared.models.base import Base
 from roomloop.shared.services.logger import app_logger
