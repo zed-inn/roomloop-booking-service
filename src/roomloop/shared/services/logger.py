@@ -4,7 +4,9 @@ from typing import Final
 
 from roomloop.config.env import env
 
-LOG_FORMAT: Final[str] = """%(asctime)s [%(levelname)s] [%(name)s] %(message)s"""
+LOG_FORMAT: Final[str] = (
+    """%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s"""
+)
 DATE_FORMAT: Final[str] = "%Y-%m-%d %H:%M:%S"
 
 

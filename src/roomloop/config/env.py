@@ -31,6 +31,10 @@ class EnvConfig(BaseModel):
         default="INFO", description="Logging level"
     )
 
+    DATABASE_FILE_PATH: str = Field(
+        default="database.db", min_length=1, description="Sqlite file location"
+    )
+
 
 def format_validation_error(err: ValidationError) -> str:
     """Formats pydantic validation error into tree format"""

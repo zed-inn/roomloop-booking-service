@@ -15,6 +15,7 @@ def test_default_env_config():
     assert config.HOST == "localhost"
     assert config.ENVIRONMENT == "development"
     assert config.LOG_LEVEL == "INFO"
+    assert config.DATABASE_FILE_PATH == "database.db"
 
 
 def test_valid_custom_env_config():
@@ -24,12 +25,14 @@ def test_valid_custom_env_config():
         "HOST": "0.0.0.0",
         "ENVIRONMENT": "production",
         "LOG_LEVEL": "DEBUG",
+        "DATABASE_FILE_PATH": "custom.db",
     }
     config = EnvConfig.model_validate(data)
     assert config.PORT == 8095
     assert config.HOST == "0.0.0.0"
     assert config.ENVIRONMENT == "production"
     assert config.LOG_LEVEL == "DEBUG"
+    assert config.DATABASE_FILE_PATH == "custom.db"
 
 
 def test_immutability_frozen():
@@ -49,6 +52,7 @@ def test_immutability_frozen():
         ("HOST", "", "at least 1 character"),
         ("ENVIRONMENT", "staging", "Input should be 'production'"),
         ("LOG_LEVEL", "VERBOSE", "Input should be 'DEBUG'"),
+        ("DATABASE_FILE_PATH", "", "at least 1 character"),
     ],
 )
 def test_validation_boundaries(field: str, invalid_value, expected_error: str):

@@ -224,3 +224,7 @@ __marimo__/
 .temp
 RoomLoop*.pdf
 rules_for_ai.md
+*.db
+*.db-wal
+*.db-shm
+admin_panel_backend/
