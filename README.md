@@ -212,6 +212,9 @@ curl -X GET http://localhost:8000/rooms
 ]
 ```
 
+> **Capacity Semantics & Exclusive Room Occupancy (Rule R4)**:
+> In compliance with PM Requirement R4 (*"Two bookings conflict if they overlap in time in the same room"*), each reservation books the entire room exclusively. `capacity` functions as physical room seating metadata for the Facilities Dashboard so teams can choose an appropriately sized room.
+
 ---
 
 ### 2. Create Single Booking (`POST /api/v1/bookings`)

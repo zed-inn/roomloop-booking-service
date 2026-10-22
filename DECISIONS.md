@@ -90,6 +90,14 @@ This document details the architectural decisions, trade-offs, Product Manager q
   - Built an automated markdown report generator exporting `tests/load/LOAD_TEST_RESULTS.md` directly from k6 on every run.
 - **Why**: Proves empirically that RoomLoop reliably sustains high multi-user concurrent traffic with an error budget of **0.00% 5xx server errors**.
 
+### 13. Exclusive Conference Room Tenancy vs. Capacity Semantics (Rule R4 vs. Contract C2)
+- **The Problem**: Contract C2 returns `{"id": int, "name": str, "capacity": int}`, which raises the question: does `capacity` allow multiple independent bookings to share a room concurrently up to that limit, or is every booking an exclusive reservation of the entire room?
+- **Our Decision**:
+  - We strictly enforce **exclusive single-booking room occupancy** per PM Requirement R4:
+    > *"R4. Two bookings conflict if they overlap in time in the same room. Back-to-back bookings (one ends 10:00, the next starts 10:00) are not a conflict."*
+  - A meeting room is an enclosed private space for team collaboration, client calls, and confidential discussions. Even if Room 3 ("Aurora", capacity 8) is booked by a team of 3, other teams cannot simultaneously book the room.
+  - `capacity` in Contract C2 functions as informational facilities metadata informing employees of maximum physical seating so they can select an appropriately sized room.
+
 ---
 
 ## (b) Questions to Ask the Product Manager Before Shipping
@@ -111,6 +119,12 @@ This document details the architectural decisions, trade-offs, Product Manager q
 
 6. **Maximum Recurrence Horizon**:
    - We capped recurrence at 52 weeks (1 year) to prevent unbounded loops. Is 52 weeks appropriate, or should recurrence be restricted to quarterly (12 weeks) or semesterly (26 weeks) booking windows?
+
+7. **Room Capacity Semantics — Physical Sizing vs. Booking Utilization**:
+   - What exactly is `capacity` in Contract C2, or did we understand it correctly?
+   - In our implementation, `capacity` is treated strictly as physical room seating metadata (number of chairs/tables) for the Facilities Dashboard, while each booking represents an exclusive reservation of the entire room (per Rule R4: *"Two bookings conflict if they overlap in time in the same room"*).
+   - Did we understand this correctly, or is there an expectation for headcount validation (e.g., adding an optional `attendees: int` to booking requests and rejecting if `attendees > room.capacity`)?
+   - Furthermore, could `capacity` ever imply shared hot-desking/seat allocation (where multiple independent users book slots in the same room up to capacity), or should meeting rooms always remain exclusive single-booking spaces?
 
 ---
 
@@ -145,6 +159,9 @@ This document details the architectural decisions, trade-offs, Product Manager q
 8. **Static Load Testing Payloads & Missing SQLite WAL Synchronization Tuning**:
    - *AI Error*: When asked to implement load testing, AI initially generated a simple script with static, hardcoded timestamps on a single day. This artificially caused almost 100% conflicts on writes, tested zero DST transition edge cases, and omitted SQLite `PRAGMA synchronous = NORMAL` and `busy_timeout` tuning, resulting in lock contention timeouts under 30 concurrent virtual users.
    - *Correction*: Engineered a 5,000-request payload bank across a 4-year window with runtime placeholder evaluators (`##...`) testing valid reservations, non-existent room IDs (404), Berlin spring-forward gap hours (422), inverted intervals (422), and forbidden extra fields (422). Tuned SQLite with `PRAGMA journal_mode = WAL`, `PRAGMA synchronous = NORMAL`, and `PRAGMA busy_timeout = 5000`, achieving 100.00% contract compliance and 0.00% 5xx server errors across 10,000 concurrent requests.
+9. **Conflating Conference Room Capacity with Shared Multi-Tenant Hot-Desking**:
+   - *AI / Design Misconception*: A developer or AI might wonder why `capacity` (e.g., capacity 8 for room 3) does not allow 8 separate overlapping bookings at the same time.
+   - *Correction & Domain Clarity*: Verified against PM Requirement R4 (*"Two bookings conflict if they overlap in time in the same room"*). Meeting rooms are exclusive physical assets: two unrelated teams cannot hold separate meetings in the same room simultaneously without destroying meeting privacy and acoustics. Clarified the domain boundary between exclusive meeting rooms and shared hot-desks, and framed the exact clarifying question for the PM regarding whether optional `attendees` headcount validation should be introduced.
 
 ---
 
