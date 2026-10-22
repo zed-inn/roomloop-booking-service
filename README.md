@@ -31,12 +31,18 @@ cd roomloop-booking-service
 uv sync
 ```
 
-### 2. Environment Configuration
+### 2. Environment Configuration & Automated Onboarding
 
-Copy the provided [`.env.example`](file:///.env.example) template to `.env` (or `config/.env`):
+You can initialize your environment and seed prototype rooms in one automated step:
 
 ```bash
-cp .env.example .env
+make setup
+```
+
+Or manually copy the provided [`.env.example`](file:///.env.example) template to `config/.env`:
+
+```bash
+cp .env.example config/.env
 ```
 
 | Variable             | Default       | Allowed Values / Description                               |
@@ -406,7 +412,8 @@ booking_service = BookingService(booking_repo=booking_repo, room_repo=room_repo)
 
 | Command             | Action                                                        |
 | ------------------- | ------------------------------------------------------------- |
-| `make dev`           | Start development server on `localhost:8000`                  |
+| `make setup`         | Automated 1-step onboarding: config/.env, seed rooms, payloads|
+| `make dev`           | Start development server on `localhost:8095`                  |
 | `make start`         | Start production server (`ENVIRONMENT=production`)             |
 | `make seed`          | Idempotently seed prototype rooms into SQLite                 |
 | `make seed-rich`     | Seed rooms plus rich sample recurring & single bookings       |

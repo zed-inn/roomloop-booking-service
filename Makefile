@@ -1,7 +1,8 @@
-.PHONY: help dev start seed seed-rich test test-v lint format format-check verify clean load-generate load-10k load-100k load-1m
+.PHONY: help setup ensure-env dev start seed seed-rich test test-v lint format format-check verify clean load-generate load-10k load-100k load-1m
 
 help:
 	@echo "RoomLoop Service — Available Commands:"
+	@echo "  make setup         - Automated 1-step onboarding (config/.env, seed rooms, payloads)"
 	@echo "  make dev           - Run development server (uv run python -m roomloop.server)"
 	@echo "  make start         - Run production server"
 	@echo "  make seed          - Run database seeder (prototype rooms)"
@@ -19,10 +20,27 @@ help:
 	@echo "  make load-py-10k   - Run 10k request pure Python async benchmark (no k6 required)"
 	@echo "  make clean         - Remove build artifacts, cache, and test databases"
 
-dev:
+ensure-env:
+	@mkdir -p config
+	@test -f config/.env || (cp .env.example config/.env && echo "==> [setup] Created config/.env from .env.example")
+
+setup: ensure-env seed ensure-payloads
+	@echo ""
+	@echo "================================================================================"
+	@echo " RoomLoop Setup Complete!"
+	@echo " • Environment configured at config/.env"
+	@echo " • Prototype rooms seeded (IDs 3, 4, 9, 17)"
+	@echo " • Load test payload templates ready"
+	@echo "================================================================================"
+	@echo " To start the service, run:"
+	@echo "   make dev   (or: make start)"
+	@echo "================================================================================"
+	@echo ""
+
+dev: ensure-env
 	ENVIRONMENT=development uv run python -m roomloop.server
 
-start:
+start: ensure-env
 	ENVIRONMENT=production uv run python -m roomloop.server
 
 seed:
